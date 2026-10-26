@@ -5,7 +5,7 @@
 =================================================================
 
 为什么用「长连接」而不是「设置接收消息回调地址」：
-    notice-hub 只监听内网 10.127.207.71:8091，企微服务器回调不到它。
+    notice-hub 只监听内网 10.0.0.10:8091，企微服务器回调不到它。
     长连接由本机主动外连 wss://openws.work.weixin.qq.com：
       · 不需要公网 IP / 回调 URL
       · 不需要处理消息加解密
@@ -94,7 +94,7 @@ class Config:
         self.bot_secret = env.get("WECOM_BOT_SECRET", "").strip()
         self.ws_url = env.get("WECOM_WS_URL", "").strip()
 
-        self.notice_base = env.get("NOTICE_BASE", "http://10.127.207.71:8091").rstrip("/")
+        self.notice_base = env.get("NOTICE_BASE", "http://10.0.0.10:8091").rstrip("/")
         self.notice_token = env.get("NOTICE_TOKEN", "").strip()
         if not self.notice_token:
             # 复用 notice-hub 自己的 .env，避免同一个令牌写两处

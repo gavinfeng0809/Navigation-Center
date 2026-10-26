@@ -166,7 +166,7 @@ class Pipeline:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="inbox 自动处理：邮件 → 原文页 + 入库")
-    ap.add_argument("--base", default="http://10.127.207.71:8091")
+    ap.add_argument("--base", default="http://10.0.0.10:8091")
     ap.add_argument("--token", default="", help="同步令牌，默认读 .env")
     ap.add_argument("--state", default=os.path.join(BASE, "data", "inbox_state.json"))
     ap.add_argument("--public-dir", default=os.path.join(BASE, "public", "originals"))

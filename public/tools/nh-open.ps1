@@ -1,8 +1,8 @@
 ﻿# notice-hub 本地协议处理程序（Winbox 联动）
 #
 # 由 nh:// 协议调用，形如：
-#     nh://winbox?host=10.94.6.9
-#     nh://winbox?host=10.94.6.9:8291
+#     nh://winbox?host=10.0.0.9
+#     nh://winbox?host=10.0.0.9:8291
 #
 # winbox.exe 的位置来自本机配置：
 #     %LOCALAPPDATA%\notice-hub\config.json      { "winbox": "C:\\Tools\\winbox.exe" }
@@ -47,25 +47,25 @@ if ($m.Success) {
     if ($hm.Success) { $target = [System.Uri]::UnescapeDataString($hm.Groups[1].Value) }
 }
 
-# 形式二：nh://winbox/10.94.6.9 （把地址放在路径里，省掉 query 规范化的麻烦）
+# 形式二：nh://winbox/10.0.0.9 （把地址放在路径里，省掉 query 规范化的麻烦）
 if (-not $target) {
     $m2 = [regex]::Match($Uri, '^nh://winbox/([^/?]+)/?$', 'IgnoreCase')
     if ($m2.Success) { $target = [System.Uri]::UnescapeDataString($m2.Groups[1].Value) }
 }
 
-# 形式三：winbox://10.94.6.9
+# 形式三：winbox://10.0.0.9
 if (-not $target) {
     $m3 = [regex]::Match($Uri, '^winbox://(.+)$', 'IgnoreCase')
     if ($m3.Success) { $target = $m3.Groups[1].Value.TrimEnd('/') }
 }
 
-# 形式四：nh://10.94.6.9 （地址直接放在主机位）
+# 形式四：nh://10.0.0.9 （地址直接放在主机位）
 if (-not $target) {
     $m4 = [regex]::Match($Uri, '^nh://([^/?]+)/?$', 'IgnoreCase')
     if ($m4.Success) { $target = $m4.Groups[1].Value }
 }
 if (-not $target) {
-    Show-Msg "无法识别的链接：`n$Uri`n`n支持这些形式：`n  nh://winbox?host=10.94.6.9`n  nh://winbox/?host=10.94.6.9`n  nh://winbox/10.94.6.9"
+    Show-Msg "无法识别的链接：`n$Uri`n`n支持这些形式：`n  nh://winbox?host=10.0.0.9`n  nh://winbox/?host=10.0.0.9`n  nh://winbox/10.0.0.9"
     exit 1
 }
 # 只允许 IPv4 / 主机名 + 可选端口；这一条同时挡掉了命令注入

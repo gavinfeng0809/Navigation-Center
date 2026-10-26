@@ -120,7 +120,7 @@ const localStorage = {
   setItem: function (k, v) { _ls[k] = String(v); },
   removeItem: function (k) { delete _ls[k]; }
 };
-const location = { href: 'http://10.127.207.71:8091/', origin: 'http://10.127.207.71:8091' };
+const location = { href: 'http://10.0.0.10:8091/', origin: 'http://10.0.0.10:8091' };
 const S = { navAll: null, navGroupsById: {}, navQ: '', favAll: false, me: null, navmGroup: 0 };
 const API = [], TOASTS = [], COPIED = [];
 let USER_ROWS = [];
@@ -281,14 +281,14 @@ function head(t) { console.log('\n\x1b[1m' + t + '\x1b[0m'); }
 function tick() { return new Promise(function (r) { setTimeout(r, 0); }); }
 
 const ITEMS = [
-  { id: 1, name: 'ATKN-001', subgroup: 'ATKN', url: 'https://198.19.223.29', favorite: 0, visit_count: 0, launch: 'web' },
-  { id: 2, name: 'ATKN-002', subgroup: 'ATKN', url: 'https://198.19.223.30', favorite: 1, visit_count: 9, launch: 'web' },
-  { id: 3, name: 'THGN-005', subgroup: 'THGN', url: 'https://198.19.224.10', favorite: 0, visit_count: 0, launch: 'web' },
+  { id: 1, name: 'ATKN-001', subgroup: 'ATKN', url: 'https://198.51.100.29', favorite: 0, visit_count: 0, launch: 'web' },
+  { id: 2, name: 'ATKN-002', subgroup: 'ATKN', url: 'https://198.51.100.30', favorite: 1, visit_count: 9, launch: 'web' },
+  { id: 3, name: 'THGN-005', subgroup: 'THGN', url: 'https://198.51.100.110', favorite: 0, visit_count: 0, launch: 'web' },
   { id: 4, name: 'SZLR-001', subgroup: 'SZLR',
-    url: 'https://198.19.223.215/firewall/shaper?tabType=policy', favorite: 0, visit_count: 3, launch: 'web' },
+    url: 'https://198.51.100.115/firewall/shaper?tabType=policy', favorite: 0, visit_count: 3, launch: 'web' },
   { id: 5, name: 'MIKROTIK-CCR', subgroup: 'MIKR', url: '', launch: 'winbox', launch_host: '192.168.88.1' },
   { id: 6, name: 'ZHKJ-001', subgroup: 'ZHKJ',
-    url: 'https://198.19.223.47:8443/network/sd-wan?tabType=health-check', favorite: 0, visit_count: 0, launch: 'web' }
+    url: 'https://198.51.100.47:8443/network/sd-wan?tabType=health-check', favorite: 0, visit_count: 0, launch: 'web' }
 ];
 
 /* ---------- 用例 ---------- */
@@ -302,7 +302,7 @@ const ITEMS = [
      所以改用本机安装的 nh:// 处理程序。 */
   ok('生成 nh:// 协议链接（不是没用的 winbox://）',
      A.navOpenTarget(ITEMS[4]) === 'nh://winbox?host=192.168.88.1', A.navOpenTarget(ITEMS[4]));
-  ok('web 项走原 URL', A.navOpenTarget(ITEMS[0]) === 'https://198.19.223.29');
+  ok('web 项走原 URL', A.navOpenTarget(ITEMS[0]) === 'https://198.51.100.29');
   ok('navIsApp 识别 winbox', A.navIsApp(ITEMS[4]) === true && A.navIsApp(ITEMS[0]) === false);
   /* Winbox 项空 url 时不能被当成站内路由；href 用 # 交给 JS 接管 */
   ok('本地应用项不误判为站内路由（空 url 的坑）',
@@ -361,7 +361,7 @@ const ITEMS = [
   ok('频次高的次之', sorted[1] === 'SZLR-001', sorted.join(','));
 
   head('[8] 搜索文本：可按 IP / 客户代号 / Winbox 地址搜');
-  ok('按 IP', A.navSearchText(ITEMS[0]).indexOf('198.19.223.29') >= 0);
+  ok('按 IP', A.navSearchText(ITEMS[0]).indexOf('198.51.100.29') >= 0);
   ok('按客户代号', A.navSearchText(ITEMS[0]).indexOf('atkn') >= 0);
   ok('按 winbox 设备地址', A.navSearchText(ITEMS[4]).indexOf('192.168.88.1') >= 0);
   var memo = { name: 'KARL-001', description: '', tags: [], url: 'https://x', subgroup: 'K', launch_host: '' };
@@ -550,7 +550,7 @@ const ITEMS = [
   var cb = getEl('uCreatedBox') ? getEl('uCreatedBox').innerHTML : '';
   ok('渲染账号信息卡片（含账号/密码/地址）',
     cb.indexOf('账号已创建') >= 0 && cb.indexOf('wangwu') >= 0 &&
-    cb.indexOf('Str0ng!Pass#2026') >= 0 && cb.indexOf('http://10.127.207.71:8091') >= 0);
+    cb.indexOf('Str0ng!Pass#2026') >= 0 && cb.indexOf('http://10.0.0.10:8091') >= 0);
 
   head('[16] 导航管理面板：分组下拉必须列出全部分组（含空分组）');
   /* 造一个「空分组」和一个「有项分组」，模拟用户刚建完分组还没加导航项的情形 */
@@ -622,14 +622,14 @@ const ITEMS = [
   head('[19] 长地址不能撑破管理表格（右列被挤出去过）');
   /* 登录地址最长 400 字符且无空格、无法折行；table-layout 默认 auto 会把表格
      撑到近 2800px，右列「可见性/操作」被挤出 .modal.wide 的 940px 可视区。 */
-  var LONG = 'https://myid.telstra.com/identity/as/authorization.oauth2?client_id=b2b-telstraconnect&' +
-    'redirect_uri=https%3A%2F%2Fconnectapp.telstra.com%2F&response_type=id_token%20token&' +
+  var LONG = 'https://myid.example-corp.com/identity/as/authorization.oauth2?client_id=b2b-exampleconnect&' +
+    'redirect_uri=https%3A%2F%2Fconnectapp.example-corp.com%2F&response_type=id_token%20token&' +
     'scope=openid%20profile%20email&state=9cb2ff0a5eb4f988a60bda7fbsC2zXyLongEnoughToOverflow';
   S.nav = { visibilities: [{ value: 'member', label: '需登录可见' }], groups: [{
     id: 15, name: '系统与平台', items: [
-      { id: 1, name: 'Telstar Connect (myid.telstra.com)', url: LONG,
+      { id: 1, name: 'SSO Connect (myid.example-corp.com)', url: LONG,
         visible_to: 'member', vis_label: '需登录可见', favorite: 0, launch: 'web' },
-      { id: 2, name: 'BPM系统', url: 'https://bpm.pbscn.net/',
+      { id: 2, name: 'BPM系统', url: 'https://bpm.example-isp.com/',
         visible_to: 'member', vis_label: '需登录可见', favorite: 0, launch: 'web' },
       { id: 3, name: '没填地址的项', url: '',
         visible_to: 'member', vis_label: '需登录可见', favorite: 0, launch: 'web' }
@@ -649,7 +649,7 @@ const ITEMS = [
     mt.indexOf('class="navm-url" title="' + LONG.replace(/&/g, '&amp;') + '"') >= 0);
   ok('长地址完整值保留在 title 悬浮提示里', mt.indexOf(LONG.slice(0, 60)) >= 0);
   ok('名称也带 title（过长时截断但不丢信息）',
-    mt.indexOf('<b title="Telstar Connect (myid.telstra.com)">') >= 0);
+    mt.indexOf('<b title="SSO Connect (myid.example-corp.com)">') >= 0);
   ok('空地址显示占位而不是空白', mt.indexOf('（未填地址）') >= 0);
 
   /* 样式层守卫：固定布局 + 单行省略号必须还在 */
@@ -705,9 +705,9 @@ const ITEMS = [
 
   /* 查看账号：有修改密码和退出登录，但没有账号管理/管理导航 */
   S.me = { id: 5, username: 'james', role: 'viewer', role_label: '查看',
-           display_name: 'james.han', weak_pwd: 1, enabled: 1 };
+           display_name: 'tom.wang', weak_pwd: 1, enabled: 1 };
   A.renderMe();
-  ok('查看账号 chip 显示姓名', getEl('navUserChip').innerHTML.indexOf('james.han') >= 0);
+  ok('查看账号 chip 显示姓名', getEl('navUserChip').innerHTML.indexOf('tom.wang') >= 0);
   ok('查看账号 chip 显示角色', getEl('navUserChip').innerHTML.indexOf('查看') >= 0);
   ok('查看账号时管理员入口仍隐藏',
      getEl('navAccount').hidden === true && getEl('navManage').hidden === true);
@@ -837,8 +837,8 @@ const ITEMS = [
   /* 自测若只测字面量 nh://winbox?host=，就会绕过浏览器的规范化，
      出现「自测通过、网页点了没反应」——本轮就栽在这里，必须用真实形式自测。 */
   ok('安装器自测覆盖浏览器真实发出的形式（带空路径）',
-     NH_SETUP_PS1.indexOf("'nh://winbox/?host=10.94.6.9'") >= 0
-     && NH_SETUP_PS1.indexOf("'nh://winbox?host=10.94.6.9'") >= 0);
+     NH_SETUP_PS1.indexOf("'nh://winbox/?host=10.0.0.9'") >= 0
+     && NH_SETUP_PS1.indexOf("'nh://winbox?host=10.0.0.9'") >= 0);
   /* 每台 PC 的 winbox 路径不同，必须能指定 —— 这是本轮的核心诉求 */
   ok('安装器提供文件选择框指定 winbox.exe',
      NH_SETUP_PS1.indexOf('OpenFileDialog') >= 0 && NH_SETUP_PS1.indexOf('winbox.exe') >= 0);
@@ -911,7 +911,7 @@ const ITEMS = [
 
   /* 用自造的干净状态：前面的用例往 S.nav 里塞过 id=1..N 的条目，
      直接拿 ITEMS[0] 会撞 id，findNavItem 找到的是别人的条目。 */
-  var ctxItem = { id: 90001, group_id: 900, name: 'CTXTEST-001', url: 'https://198.19.223.29',
+  var ctxItem = { id: 90001, group_id: 900, name: 'CTXTEST-001', url: 'https://198.51.100.29',
                   subgroup: 'CTXT', favorite: 0, visit_count: 0, launch: 'web' };
   var ctxWinbox = { id: 90002, group_id: 900, name: 'CTXWB-002', url: '', subgroup: 'CTX',
                     favorite: 0, visit_count: 0, launch: 'winbox', launch_host: '192.168.88.9' };

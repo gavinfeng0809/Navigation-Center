@@ -73,8 +73,8 @@ POLISH_TITLE_CLOSING = re.compile(
     r"^\s*(?:Best\s+Regards|Regards|Thanks|Thank\s+you|BR|Sincerely|此致|敬礼|谢谢|多谢)\s*[,，。.!！]?\s*$",
     re.I,
 )
-POLISH_TITLE_SIGN = re.compile(r"(Telstra\s*PBS|This communication may contain|保密声明|www\.telstra)", re.I)
-POLISH_TITLE_SIGN_SHORT = re.compile(r"(@telstra-pbs|400 700 2800)", re.I)   # 只在短行里算签名
+POLISH_TITLE_SIGN = re.compile(r"(This communication may contain|保密声明|版权声明|Confidential)", re.I)
+POLISH_TITLE_SIGN_SHORT = re.compile(r"(@example-corp|400 700 2800)", re.I)   # 只在短行里算签名
 POLISH_MAILHDR = re.compile(
     r"^\s*(?:From|Sent|To|Cc|Bcc|Subject|发件人|发送时间|收件人|抄送|主题)\s*[:：]\s*\S", re.I
 )

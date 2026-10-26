@@ -925,7 +925,7 @@ function armWinboxFallback(host) {
 function openWinboxHelp(host) {
   var base = location.origin;
   host = host || '';
-  var testHref = 'nh://winbox?host=' + encodeURIComponent(host || '10.94.6.9');
+  var testHref = 'nh://winbox?host=' + encodeURIComponent(host || '10.0.0.9');
   var h = '<div class="modal" style="max-width:600px"><div class="mhead">' +
     '<h3>Winbox 本地联动设置</h3>' +
     '<button class="btn icon ghost" data-act="close">' + ic('close', 17) + '</button></div>' +
@@ -944,7 +944,7 @@ function openWinboxHelp(host) {
     ' nh-open.ps1</a></div>' +
     '<b>2.</b> 双击 <code>nh-setup.cmd</code>。它会自动找 winbox.exe，' +
     '<b>找不到（或找错了）会弹出文件选择框让你指定</b>。<br>' +
-    '<b>3.</b> 装完它会问你要不要立刻用 10.94.6.9 试一下，选 Y 即可验证。<br>' +
+    '<b>3.</b> 装完它会问你要不要立刻用 10.0.0.9 试一下，选 Y 即可验证。<br>' +
     '<b>4.</b> 回到导航中心，再点 Winbox 卡片。' +
     '</div>';
   h += '<div class="notice" style="margin-top:16px">' + ic('info', 15) +
@@ -1564,7 +1564,7 @@ function navItemForm(item, presetGroupId) {
   var h = '<div class="field"><label>名称 *</label><input id="nfName" value="' + esc(it.name || '') +
     '" placeholder="如：CSE 排班系统"></div>';
   h += '<div class="field"><label>地址</label><input id="nfUrl" value="' + esc(it.url || '') +
-    '" placeholder="http://10.127.207.71:3005"></div>';
+    '" placeholder="http://10.0.0.10:3005"></div>';
   h += '<div class="field"><label>一句话描述</label><input id="nfDesc" value="' +
     esc(it.description || '') + '" placeholder="如：工程师轮班排布"></div>';
   h += '<div class="grid3">';

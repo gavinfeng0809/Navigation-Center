@@ -68,12 +68,12 @@ const CASES = [
   { name: '邮件式头部字段 + 落款', text:
 `重要通知：钻石客户央视国际YSGJ 新增SLA级监控通知
 
-发布人：Gavin Feng
+发布人：Alex Chen
 发布时间：2026-08-18
 
 Dear Team,
 
-IPVPN 链路已开通全程 SLA 监控，告警将发送至 vipcustomeralert@Telstra-pbs.cn。
+IPVPN 链路已开通全程 SLA 监控，告警将发送至 vipcustomeralert@Example Corp.cn。
 请值班同事在收到告警后按流程排查，超过 3 分钟未恢复需通知客户。
 
 Best Regards
@@ -99,7 +99,7 @@ Gavin` },
 - 影响范围：全部排班查询功能
 
 详 https://doc.weixin.qq.com/sheet/abc
-请联系 James Han 反馈。` },
+请联系 Tom Wang 反馈。` },
 ];
 
 // ---------------------------------------------------------------- 对拍

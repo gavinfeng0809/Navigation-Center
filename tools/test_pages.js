@@ -53,7 +53,7 @@ function runPage(file, label){
     Uint32Array, isNaN, parseInt, parseFloat, URL, URLSearchParams,
     FormData, Blob, File, Headers, Request, Response, AbortController,
     document:doc,
-    location:{ href:'http://10.127.207.71:8091/'+file, origin:'http://10.127.207.71:8091',
+    location:{ href:'http://10.0.0.10:8091/'+file, origin:'http://10.0.0.10:8091',
                pathname:'/'+file, hash:'', search:'', replace(){}, reload(){} },
     navigator:{ userAgent:'node', clipboard:null },
     localStorage:{ getItem:k=>store[k]===undefined?null:store[k], setItem:(k,v)=>store[k]=String(v),

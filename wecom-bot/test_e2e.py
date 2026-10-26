@@ -119,9 +119,9 @@ async def main() -> int:
             "WECOM_BOT_ID": "testbot",
             "WECOM_BOT_SECRET": "testsecret",
             "WECOM_WS_URL": f"ws://127.0.0.1:{MOCK_PORT}",
-            # 发布人显示名映射：mock 里的 userid 是 gavin.feng。
+            # 发布人显示名映射：mock 里的 userid 是 alex.chen。
             # 企微回调只给 userid、没有显示名，所以这条映射必须真的被应用。
-            "USER_NAMES": "gavin.feng=测试用显示名",
+            "USER_NAMES": "alex.chen=测试用显示名",
         })).run())
 
     # 3. 等 mock 把 3 条场景推完 + 采集器处理完
@@ -163,7 +163,7 @@ async def main() -> int:
         _sender = _conn.execute("SELECT sender FROM notices WHERE ext_id=?",
                                 ("mock-msgid-notice-0001",)).fetchone()[0]
         _conn.close()
-        check("原始 userid 留档在 sender 字段", _sender == "gavin.feng", str(_sender))
+        check("原始 userid 留档在 sender 字段", _sender == "alex.chen", str(_sender))
         check("标题取了正文首行", "华东区新铂金客户" in (r[5] or ""), str(r[5])[:60])
         check("分类=重要通知", r[6] == "重要通知", str(r[6]))
         check("级别=urgent", r[7] == "urgent", str(r[7]))
@@ -209,10 +209,12 @@ async def main() -> int:
         "ext_id": "mock-msgid-notice-0001", "source": "wecom", "source_name": "MOCKCHATID001",
         "title": "重复投递测试", "content": "重复投递测试", "published_at": "2026-10-10 16:00:00",
     }]}).encode()
+    # 门户地址不写死：从 config.env 读（真实地址在那边，且 config.env 不入版本库）
+    _cfg = wecom_bot.Config(wecom_bot.DEFAULT_CONFIG, {})
     req = urllib.request.Request(
-        "http://10.127.207.71:8091/api/ingest", data=body, method="POST",
+        _cfg.notice_base.rstrip("/") + "/api/ingest", data=body, method="POST",
         headers={"Content-Type": "application/json",
-                 "X-Sync-Token": wecom_bot.Config(wecom_bot.DEFAULT_CONFIG, {}).notice_token})
+                 "X-Sync-Token": _cfg.notice_token})
     with urllib.request.urlopen(req, timeout=10) as resp:
         res = json.loads(resp.read())
     print(f"   {res}")

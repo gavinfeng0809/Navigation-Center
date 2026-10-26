@@ -7,7 +7,7 @@ notice-hub 的「客户站点防火墙」分组。
 规则（已与使用方确认）：
   1. 子分组 = Service Id 前缀（如 ATKN-001 → ATKN），共 84 个客户
   2. **保留导航里已有的深链**，xlsx 只用来补全「主机:端口」。
-     例：导航 https://198.19.222.91/ng/routing/bgp  +  xlsx https://198.19.222.91
+     例：导航 https://198.51.100.91/ng/routing/bgp  +  xlsx https://198.51.100.91
          → 保持不变（深链不丢）；只有当 xlsx 的 host:port 与导航不同时才改写 host:port、保留路径
   3. 导航里独有、xlsx 没有的设备（如整个 WWZG）**全部保留**，不被清理
   4. xlsx 有、导航没有的设备 → 新增
@@ -109,7 +109,7 @@ def norm_url(u: str) -> str:
 
 IP_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?$")
 URL_RE = re.compile(r"(https?://[^\s，,；;、]+)", re.I)
-# 裸主机（IP 或域名）+ 可选端口 + 可选路径，如 198.19.227.180:8443/login?redir=%2F
+# 裸主机（IP 或域名）+ 可选端口 + 可选路径，如 198.51.100.180:8443/login?redir=%2F
 BARE_RE = re.compile(
     r"^(?:\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9][a-z0-9\-]*(?:\.[a-z0-9\-]+)+)"
     r"(?::\d+)?(?:[/?#]\S*)?$", re.I)
@@ -122,7 +122,7 @@ def extract_login(cell: str) -> tuple:
       1. 主备双地址：'https://a:8443/ng/interface ⏎ 或 ⏎ https://b:8443/ng/interface'
       2. 带备注：   'https://a:8443/ ⏎ 分流设备：https://b'
       3. 坏空格：   'https://a :8443或https://b:8443'
-      4. 裸主机带路径：'198.19.227.180:8443/login?redir=%2F'
+      4. 裸主机带路径：'198.51.100.180:8443/login?redir=%2F'
     规则：第一个地址当主地址，其余一律进说明（不丢信息）。
     """
     raw = (cell or "").strip()

@@ -53,7 +53,7 @@ def build_scenarios() -> dict:
         "影响：割接期间双线各中断约 15 分钟，业务侧已确认可接受\n"
         "动作：请值班同事在窗口前 30 分钟完成告警屏蔽，结束后恢复\n"
         "\n"
-        "发布人：Gavin Feng"
+        "发布人：Alex Chen"
     )
 
     def body(msgid: str, msgtype: str, **extra) -> dict:
@@ -62,7 +62,7 @@ def build_scenarios() -> dict:
             "aibotid": "MOCKBOTID",
             "chatid": "MOCKCHATID001",
             "chattype": "group",
-            "from": {"userid": "gavin.feng"},
+            "from": {"userid": "alex.chen"},
             "msgtype": msgtype,
         }
         b.update(extra)

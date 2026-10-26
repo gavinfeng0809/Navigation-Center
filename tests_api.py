@@ -638,7 +638,7 @@ def main() -> int:
         # 235 个客户站点被静默当成「非内网」跳过，永远显示未探测。这里锁死这个行为。
         code, d, _ = jreq("POST", "/api/nav/items",
                           {"group_id": d["groups"][0]["id"], "name": "客户站点探测",
-                           "url": "http://198.19.255.254:8443", "probe": 1,
+                           "url": "http://198.51.100.254:8443", "probe": 1,
                            "visible_to": "admin"})
         check("可新增 198.19.x.x 的客户站点条目", code == 200 and d.get("id"), str(d)[:120])
         cid = d.get("id")
@@ -696,13 +696,13 @@ def main() -> int:
         check("管理员登录后 can_edit 为 true", d.get("can_edit") is True, "")
         gid = d["groups"][0]["id"]
         code, d, _ = jreq("POST", "/api/nav/items",
-                          {"group_id": gid, "name": "测试系统", "url": "10.127.207.71:8081",
+                          {"group_id": gid, "name": "测试系统", "url": "10.0.0.10:8081",
                            "description": "自动化测试用"})
         check("管理员可新增导航项", code == 200, str(d)[:140])
         new_id = d.get("id")
         added = [i for g in d["groups"] for i in g["items"] if i["id"] == new_id]
         check("地址缺协议头时自动补 http://",
-              bool(added) and added[0]["url"] == "http://10.127.207.71:8081",
+              bool(added) and added[0]["url"] == "http://10.0.0.10:8081",
               added[0]["url"] if added else "未找到")
         check("新增项默认免登录可见", bool(added) and added[0]["visible_to"] == "guest", "")
         code, d, _ = jreq("POST", "/api/nav/items", {"group_id": gid, "name": "", "url": "x"})
@@ -973,10 +973,10 @@ def main() -> int:
             return False
 
         check("接受浏览器规范化后的链接（winbox 后多一个斜杠）",
-              _accepts("nh://winbox/?host=10.94.6.9"), "")
-        check("接受未经规范化的原始写法", _accepts("nh://winbox?host=10.94.6.9"), "")
-        check("接受路径形式", _accepts("nh://winbox/10.94.6.9"), "")
-        check("仍兼容旧的 winbox://", _accepts("winbox://10.94.6.9"), "")
+              _accepts("nh://winbox/?host=10.0.0.9"), "")
+        check("接受未经规范化的原始写法", _accepts("nh://winbox?host=10.0.0.9"), "")
+        check("接受路径形式", _accepts("nh://winbox/10.0.0.9"), "")
+        check("仍兼容旧的 winbox://", _accepts("winbox://10.0.0.9"), "")
         check("拒绝无关链接", not _accepts("https://evil.example/"), "")
 
         # 安装器会先从门户拉最新处理程序（处理程序是拷贝到本机的，不会自动更新）。

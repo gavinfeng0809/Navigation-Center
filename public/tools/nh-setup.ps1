@@ -9,7 +9,7 @@
 
 param(
     [string]$WinboxPath = '',
-    [string]$BaseUrl = 'http://10.127.207.71:8091',
+    [string]$BaseUrl = 'http://10.0.0.10:8091',
     [switch]$Offline,
     [switch]$Uninstall,
     [switch]$Show
@@ -303,13 +303,13 @@ Say ''
 Say "   winbox.exe : $winbox"
 Say '   协议       : nh://  →  已注册'
 Say ''
-$ans = Read-Host '   现在就用 10.94.6.9 试一下？(Y/N)'
+$ans = Read-Host '   现在就用 10.0.0.9 试一下？(Y/N)'
 if ($ans -match '^[Yy]' -or $ans -eq '') {
     # 自测必须走浏览器**实际会传进来**的形式，否则自测通过、网页点却没反应。
     # 浏览器把 winbox 当主机名，序列化时会补一个空路径：
     #   nh://winbox?host=X   →   实际收到 nh://winbox/?host=X   （winbox 后面多一个斜杠）
     # 两种形式都测，确保浏览器那条路真的通。
-    foreach ($t in @('nh://winbox/?host=10.94.6.9', 'nh://winbox?host=10.94.6.9')) {
+    foreach ($t in @('nh://winbox/?host=10.0.0.9', 'nh://winbox?host=10.0.0.9')) {
         Say "   测试 $t" 'Gray'
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Handler $t
     }

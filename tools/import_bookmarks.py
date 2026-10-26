@@ -8,7 +8,7 @@
     python tools/import_bookmarks.py \
         --file "D:/.../bookmarks.html" \
         --folder "PBS办公" \
-        --base http://10.127.207.71:8091 \
+        --base http://10.0.0.10:8091 \
         --user admin --password admin \
         [--dry-run] [--tree] [--guest]
 
@@ -275,7 +275,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", required=True)
     ap.add_argument("--folder", required=True)
-    ap.add_argument("--base", default="http://10.127.207.71:8091")
+    ap.add_argument("--base", default="http://10.0.0.10:8091")
     ap.add_argument("--user", default="admin")
     ap.add_argument("--password", required=True)
     ap.add_argument("--guest", action="store_true", help="导入为免登录可见（默认需登录可见）")

@@ -1,6 +1,6 @@
 # 企微「重要通知」自动归档采集器
 
-把企微群里发的**重要通知**，一键归档进 [重要通知中心](http://10.127.207.71:8091)。
+把企微群里发的**重要通知**，一键归档进 [重要通知中心](http://10.0.0.10:8091)。
 
 用法就一句话：**群里发重要通知时，@一下这个机器人。**
 
@@ -118,7 +118,7 @@ TAGS=待汇总
 | 延迟 | 较高（每次建连） | 低（复用连接） |
 | 可靠性 | 高（无状态） | 需心跳保活、断线重连 |
 
-notice-hub 只监听内网网卡 `10.127.207.71:8091`（[docker-compose.yml](/data/notice-hub/docker-compose.yml) 里刻意这么配的），
+notice-hub 只监听内网网卡 `10.0.0.10:8091`（[docker-compose.yml](/data/notice-hub/docker-compose.yml) 里刻意这么配的），
 企微服务器根本回调不到它——所以**长连接是唯一可行的选择**，而且顺带省掉了整套加解密。
 
 链路是**本机主动外连** `wss://openws.work.weixin.qq.com`，不需要在防火墙上开任何入向端口。
@@ -175,17 +175,17 @@ tail -f /data/notice-hub/data/wecom-bot.log
 
 ### 发布人显示名（可选，建议做）
 
-企微的消息回调里 `from` **只有 `userid`**（形如 `FengXuJie`），**没有显示名**；
+企微的消息回调里 `from` **只有 `userid`**（形如 `ChenXuJie`），**没有显示名**；
 长连接 SDK 也没有查用户资料的接口（`WeComApiClient` 只有文件下载）。
-所以「页面上显示 Gavin Feng 而不是 FengXuJie」这件事，只能靠一份映射表：
+所以「页面上显示 Alex Chen 而不是 ChenXuJie」这件事，只能靠一份映射表：
 
 ```env
-USER_NAMES=FengXuJie=Gavin Feng,HanZheng=韩征
+USER_NAMES=ChenXuJie=Alex Chen,WangZheng=韩征
 ```
 
 没配到的会原样显示 userid，并在日志里打一行提示（每个 userid 只提示一次），
 照着补就行。原始 userid 会另存到 `sender` 字段，详情页显示成
-`CSE-小组长群　<FengXuJie>` —— 同名同姓或有人改了显示名时，靠它才能对得上人。
+`CSE-小组长群　<ChenXuJie>` —— 同名同姓或有人改了显示名时，靠它才能对得上人。
 
 > 想全自动拿姓名，得另建一个**自建应用**、给它通讯录读取权限，
 > 用 corpid + 应用 secret 调 `user/get`。当前只有机器人的 BotID/Secret，做不到。
@@ -275,7 +275,7 @@ A：分开的两件事——
   条目带着 `待汇总` 标签（和邮件链路同一个标签），由 Hermes 按需补。
   注意 Hermes 那一步本来就不是定时的，邮件一直是「人工/模型按需补」。
 
-**Q：发布人显示的是 FengXuJie，不是企微里的名字？**
+**Q：发布人显示的是 ChenXuJie，不是企微里的名字？**
 A：回调里只有 userid，没有显示名，得在 `USER_NAMES` 里配映射（见上文）。
 没配到的会原样显示 userid 并在日志里提示。已经入库的历史条目不会被自动改，
 需要回填的话改一下 `notices.publisher` 即可。

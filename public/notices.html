@@ -594,7 +594,7 @@ function openEditor(n) {
 var IMPORT_EXAMPLE =
   '来源: 企微\n' +
   '群名称: 运维值班群\n' +
-  '发布人: Gavin Feng\n' +
+  '发布人: Alex Chen\n' +
   '发布时间: 2026-09-15 10:30\n' +
   '分类: 网络变更\n' +
   '级别: 紧急\n' +
@@ -700,9 +700,9 @@ var POLISH_TITLE_GREET = /^\s*(?:Dear\b[^,，]{0,30}[,，]?|Hi\b[^,，]{0,20}[,�
 
 var POLISH_TITLE_CLOSING = /^\s*(?:Best\s+Regards|Regards|Thanks|Thank\s+you|BR|Sincerely|此致|敬礼|谢谢|多谢)\s*[,，。.!！]?\s*$/i;
 
-var POLISH_TITLE_SIGN = /(Telstra\s*PBS|This communication may contain|保密声明|www\.telstra)/i;
+var POLISH_TITLE_SIGN = /(This communication may contain|保密声明|版权声明|Confidential)/i;
 
-var POLISH_TITLE_SIGN_SHORT = /(@telstra-pbs|400 700 2800)/i;   // 只在短行里算签名
+var POLISH_TITLE_SIGN_SHORT = /(@example-corp|400 700 2800)/i;   // 只在短行里算签名
 var POLISH_MAILHDR = /^\s*(?:From|Sent|To|Cc|Bcc|Subject|发件人|发送时间|收件人|抄送|主题)\s*[:：]\s*\S/i;
 
 function isTitleJunk(line) {
@@ -847,7 +847,7 @@ function openImport() {
   h += '<div style="font-size:12.5px;color:var(--dim);font-weight:600;margin:14px 0 6px">请求体示例</div>';
   h += '<div class="rep">{\n  "items": [\n    {\n      "ext_id": "wecom-msgid-abc123",\n' +
     '      "source": "wecom",\n      "source_name": "运维值班群",\n      "title": "【重要】xxx",\n' +
-    '      "content": "正文…",\n      "publisher": "Gavin Feng",\n' +
+    '      "content": "正文…",\n      "publisher": "Alex Chen",\n' +
     '      "published_at": "2026-09-15 10:30:00",\n      "category": "网络变更",\n' +
     '      "level": "urgent",\n      "tags": ["割接"]\n    }\n  ]\n}</div>';
   h += '<div class="hint" style="margin-top:12px">企微群机器人 Webhook 只能发不能收、自建应用读不到群历史，' +

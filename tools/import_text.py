@@ -410,7 +410,7 @@ def main() -> None:
     ap.add_argument("--source-name", default="", help="群名称/邮件文件夹 兜底")
     ap.add_argument("--publisher", default="", help="发布人兜底")
     # 目标与鉴权
-    ap.add_argument("--base", default="http://10.127.207.71:8091", help="notice-hub 地址")
+    ap.add_argument("--base", default="http://10.0.0.10:8091", help="notice-hub 地址")
     ap.add_argument("--token", default="", help="同步令牌，默认读 ../.env 的 SYNC_TOKEN")
     ap.add_argument("--batch", type=int, default=200, help="每次提交多少条，默认 200")
     ap.add_argument("--timeout", type=int, default=30, help="HTTP 超时秒")

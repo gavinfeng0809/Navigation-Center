@@ -681,9 +681,13 @@ TITLE_GREET_RE = re.compile(
     r"|Good\s+(?:morning|afternoon))\s*$", re.I)
 TITLE_MAILHDR_RE = re.compile(
     r"^\s*(?:From|Sent|To|Cc|Bcc|Subject|发件人|发送时间|收件人|抄送|主题)\s*[:：]", re.I)
-TITLE_SIGNOFF_RE = re.compile(
-    r"(Telstra\s*PBS|This communication may contain|保密声明|版权|@telstra-pbs"
-    r"|400 700 2800|www\.telstra)", re.I)
+# 「自己公司」的特征串：识别邮件签名/落款行（签名行不能当标题）。
+# 真实域名、电话、版权字样放 .env 的 OWN_BRANDS（逗号分隔，不入版本库）；
+# 默认只给通用占位，换公司不用改代码。
+OWN_BRANDS = [x.strip() for x in os.environ.get(
+    "OWN_BRANDS", "example-corp.com,保密声明,版权,This communication may contain"
+).split(",") if x.strip()]
+TITLE_SIGNOFF_RE = re.compile("(" + "|".join(re.escape(x) for x in OWN_BRANDS) + ")", re.I)
 # 落款/结束语（"Best Regards,"、"谢谢" 之类，自己不能当标题）
 TITLE_CLOSING_RE = re.compile(
     r"^\s*(?:Best\s+Regards|Regards|Thanks|Thank\s+you|BR|Sincerely|此致|敬礼|谢谢|多谢)"
@@ -698,17 +702,17 @@ def is_title_junk(line: str) -> bool:
     if (TITLE_LABEL_RE.match(t) or TITLE_GREET_RE.match(t) or TITLE_CLOSING_RE.match(t)
             or TITLE_MAILHDR_RE.match(t)):
         return True
-    if re.search(r"(Telstra\s*PBS|This communication may contain|保密声明|版权|www\.telstra)", t, re.I):
+    if TITLE_SIGNOFF_RE.search(t):
         return True
     # 邮箱/电话只有出现在**短行**里才当签名——正文里提到告警组邮箱的行不能因此被跳过
-    if len(t) <= 40 and re.search(r"(@telstra-pbs|400 700 2800)", t, re.I):
+    if len(t) <= 40 and TITLE_SIGNOFF_RE.search(t):
         return True
     if re.fullmatch(r"[\s\-–—_=*#·•.，。；;、!！?？:：()（）\[\]【】]+", t):
         return True                     # 纯符号/分隔线
     if re.fullmatch(r"(?:https?://\S+|!\[[^\]]*\]\(\S+\))", t):
         return True                     # 只有链接/只有一张图
     if re.fullmatch(r"[A-Za-z][A-Za-z.\-]*(?:\s+[A-Za-z][A-Za-z.\-]*){1,3}", t):
-        return True                     # 只有英文署名，如 Lucy Wang
+        return True                     # 只有英文署名，如 Lisa Liu
     m = re.match(r"^\s*([^:：]{1,12})\s*[:：]\s*\S", t)
     if m and (m.group(1).strip() in FIELD_ALIASES or m.group(1).strip().lower() in FIELD_ALIASES):
         return True                     # 字段行（来源: 企微 / 发布时间: …）不是标题
@@ -1245,13 +1249,13 @@ DEMO_DATA = [
         "content": "各位同事：\n\n计划于 9 月 18 日 00:00-04:00 对广州同城 A-3 机房两台核心交换机做版本升级，"
                    "期间该机房下所有业务会产生 3 次以内、每次不超过 90 秒的中断。\n\n"
                    "影响范围：A-3 机房接入的全部 CSE 客户。\n"
-                   "应急联系人：Gavin Feng / 1380xxxxxxx\n"
+                   "应急联系人：Alex Chen / 1380xxxxxxx\n"
                    "如客户侧有异议，请于 9 月 17 日 18:00 前反馈。",
         "category": "网络变更", "level": "urgent", "tags": ["割接", "机房", "核心交换机"],
-        "publisher": "Gavin Feng", "published_at": "2026-09-15 10:30:00", "pinned": 1,
+        "publisher": "Alex Chen", "published_at": "2026-09-15 10:30:00", "pinned": 1,
     },
     {
-        "ext_id": "demo-2", "source": "outlook", "sender": "it-security@telstra-pbs.cn",
+        "ext_id": "demo-2", "source": "outlook", "sender": "it-security@example-corp.com",
         "source_name": "IT Security Announcements",
         "title": "FortiClient EMS 7.4 客户端强制升级通知",
         "content": "全体同事务必在 9 月 30 日前完成 FortiClient 升级到 7.4.x。\n\n"
@@ -1267,10 +1271,10 @@ DEMO_DATA = [
                    "经与客户确认是新上线视频会议业务占满带宽所致，已于 09-14 17:40 恢复正常。\n\n"
                    "后续建议：为该站点配置 QoS 策略，将视频流量限速到 6Mbps 并保证优先级。",
         "category": "故障公告", "level": "important", "tags": ["CDJS", "QoS", "带宽"],
-        "publisher": "Gavin Feng", "published_at": "2026-09-14 18:00:00",
+        "publisher": "Alex Chen", "published_at": "2026-09-14 18:00:00",
     },
     {
-        "ext_id": "demo-4", "source": "outlook", "sender": "hr@telstra-pbs.cn",
+        "ext_id": "demo-4", "source": "outlook", "sender": "hr@example-corp.com",
         "source_name": "HR Notification",
         "title": "2026 年中秋、国庆假期值班安排",
         "content": "中秋 9 月 25 日 - 27 日，国庆 10 月 1 日 - 7 日。\n\n"
@@ -1295,7 +1299,7 @@ DEMO_DATA = [
                    "归档要求：\n1. 标题保留原始前缀（如【重要】【紧急】）；\n"
                    "2. 必须选择分类与级别；\n3. 涉及客户的通知需填写发布人。",
         "category": "业务通知", "level": "normal", "tags": ["规范", "流程"],
-        "publisher": "Gavin Feng", "published_at": "2026-09-08 09:00:00",
+        "publisher": "Alex Chen", "published_at": "2026-09-08 09:00:00",
     },
 ]
 
@@ -1320,8 +1324,8 @@ NAV_VISIBILITIES = ("guest", "member", "admin")
 NAV_LAUNCHES = ("web", "winbox", "custom")
 NAV_VIS_LABELS = {"guest": "免登录可见", "member": "需登录可见", "admin": "仅管理员可见"}
 
-# 种子数据里的主机名（内网 IP）。换机器时改这里或直接改环境变量 NAV_HOST
-NAV_HOST = os.environ.get("NAV_HOST", "10.127.207.71")
+# 种子数据里的主机名。真实值放 .env 的 NAV_HOST（不入版本库）
+NAV_HOST = os.environ.get("NAV_HOST", "127.0.0.1")
 
 # 在线探测：默认只允许探测内网地址，避免把本服务当成任意主机端口扫描器
 NAV_PROBE_ALLOW_PUBLIC = os.environ.get("NAV_PROBE_ALLOW_PUBLIC", "0").strip() in ("1", "true", "on")
