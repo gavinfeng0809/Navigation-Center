@@ -1,0 +1,22 @@
+[Unit]
+Description=企微「重要通知」自动归档采集器（智能机器人长连接）
+Documentation=file:///data/notice-hub/wecom-bot/README.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/notice-hub/wecom-bot
+ExecStart=/data/notice-hub/wecom-bot/venv/bin/python /data/notice-hub/wecom-bot/wecom_bot.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/data/notice-hub/data/wecom-bot.log
+StandardError=append:/data/notice-hub/data/wecom-bot.log
+Nice=5
+
+# 只需要出网连企微 + 写 notice-hub 的 public 目录
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>重要通知中心</title>
+<link rel="stylesheet" href="/common.css">
+</head>
+<body>
+<div class="login" id="loginScreen" hidden>
+  <form class="login-card" id="loginForm" method="post" action="/api/login" autocomplete="on">
+    <div class="login-logo" id="loginLogo"></div>
+    <h1>重要通知中心</h1>
+    <p>企业微信 · Outlook 重要通知归档与检索</p>
+    <input type="text" id="loginUser" name="username" placeholder="账号"
+           autocomplete="username" autocapitalize="off" spellcheck="false"
+           style="margin-bottom:10px">
+    <input type="password" id="loginPwd" name="password" placeholder="密码"
+           autocomplete="current-password">
+    <label class="remember">
+      <input type="checkbox" id="loginRemember" name="remember" checked>
+      <span>记住账号</span>
+      <span class="rhint">密码交给浏览器保存</span>
+    </label>
+    <button type="submit" id="loginBtn">登录</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+
+<!-- 导航门户（默认首页，免登录） -->
+<div id="app" hidden>
+  <header class="topbar">
+    <button class="btn icon ghost drawerbtn" id="btnDrawer" title="筛选"></button>
+    <button class="btn icon ghost" id="btnBackPortal" title="返回导航"></button>
+    <div class="brand"><span class="mark" id="noticeBrandMark"></span><span>重要通知中心</span></div>
+    <div class="searchwrap">
+      <span class="si" id="siSearch"></span>
+      <input type="search" id="q" placeholder="搜索标题、正文、标签、发布人…（多个关键词用空格分隔，全部命中）">
+      <span class="kbd">/</span>
+      <button type="button" class="clr" id="btnClearQ" title="清空"></button>
+    </div>
+    <div class="topright">
+      <button class="btn primary" id="btnImport"><span id="icImport"></span><span class="hmob">导入</span></button>
+      <button class="btn icon" id="btnStats" title="统计"></button>
+      <button class="btn icon" id="btnTheme" title="切换主题"></button>
+      <button class="btn icon" id="btnMenu" title="更多"></button>
+    </div>
+  </header>
+  <div class="banner" id="pwdBanner" hidden></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="fgroup" id="fSource"></div>
+      <div class="fgroup" id="fLevel"></div>
+      <div class="fgroup" id="fCat"></div>
+      <div class="fgroup" id="fTime"></div>
+      <div class="fgroup" id="fOps"></div>
+    </aside>
+
+    <main class="main">
+      <div class="toolbar">
+        <div class="count" id="count"></div>
+        <div class="spacer"></div>
+        <select class="sel" id="sortSel">
+          <option value="published-desc">发布时间 · 新→旧</option>
+          <option value="published-asc">发布时间 · 旧→新</option>
+          <option value="received-desc">入库时间 · 新→旧</option>
+        </select>
+        <select class="sel" id="sizeSel">
+          <option value="20">每页 20</option>
+          <option value="50">每页 50</option>
+          <option value="100">每页 100</option>
+        </select>
+        <div class="seg">
+          <button id="viewCard" title="卡片视图"></button>
+          <button id="viewTable" title="表格视图"></button>
+        </div>
+        <button class="btn" id="btnExport"><span id="icDown"></span><span class="hmob">导出</span></button>
+      </div>
+      <div id="listArea"></div>
+      <div class="pager" id="pager"></div>
+    </main>
+  </div>
+</div>
+<div id="modalRoot"></div>
+<div class="toast" id="toastRoot"></div>
+<div id="scrim"></div>
+<script src="/common.js"></script>
+<script>
+(function () {
+'use strict';
+
+var NH = window.NH;
+var LS_USER = NH.LS_USER, LS_VIEW = NH.LS_VIEW, LV_COLOR = NH.LV_COLOR, LV_LABEL = NH.LV_LABEL, S = NH.S, SRC_COLOR = NH.SRC_COLOR, SRC_ICON = NH.SRC_ICON, SRC_LABEL = NH.SRC_LABEL, api = NH.api, applyTheme = NH.applyTheme, armLoginFallback = NH.armLoginFallback, cleanSummary = NH.cleanSummary, closeModal = NH.closeModal, copyText = NH.copyText, esc = NH.esc, fallbackCopy = NH.fallbackCopy, fillPwdBanner = NH.fillPwdBanner, fmtDT = NH.fmtDT, getToken = NH.getToken, go = NH.go, hl = NH.hl, ic = NH.ic, initTheme = NH.initTheme, isAdmin = NH.isAdmin, isImageUrl = NH.isImageUrl, linkify = NH.linkify, loginRememberUser = NH.loginRememberUser, mountModal = NH.mountModal, openChangePwd = NH.openChangePwd, pad = NH.pad, parseDT = NH.parseDT, queryParams = NH.queryParams, readLoginHash = NH.readLoginHash, renderAttachList = NH.renderAttachList, renderMe = NH.renderMe, setToken = NH.setToken, showLogin = NH.showLogin, submitLoginByFetch = NH.submitLoginByFetch, svg = NH.svg, timeAgo = NH.timeAgo, toast = NH.toast, todayStr = NH.todayStr;
+
+var loginBtn = document.getElementById('loginBtn');
+
+if (loginBtn) {
+  loginBtn.addEventListener('click', function () {
+    loginRememberUser();
+    armLoginFallback();
+  });
+}
+
+document.getElementById('loginForm').addEventListener('submit', function (e) {
+  var uname = loginRememberUser();
+  if (!uname) {
+    // 没填账号就别把空表单发出去
+    e.preventDefault();
+    document.getElementById('loginErr').textContent = '请输入账号';
+    return;
+  }
+  // 不 preventDefault：先走浏览器原生提交，密码管理器才会弹「保存密码」
+  armLoginFallback();
+});
+
+function loadNotices() {
+  var area = document.getElementById('listArea');
+  area.innerHTML = '<div class="empty">正在加载…</div>';
+  return api('/api/notices?' + new URLSearchParams(queryParams()).toString()).then(function (res) {
+    S.items = res.items; S.total = res.total; S.pages = res.pages; S.page = res.page;
+    renderList(); renderPager(); renderCount();
+  }).catch(function (err) {
+    if (err.status === 401) return showLogin('会话已过期，请重新登录');
+    area.innerHTML = '<div class="empty">' + ic('warn', 30) + '<b>加载失败</b>' + esc(err.message) + '</div>';
+  });
+}
+
+function loadCategories() {
+  return api('/api/categories').then(function (res) {
+    S.categories = res.items || []; renderSidebar();
+  }).catch(function () {});
+}
+
+function loadStats() {
+  return api('/api/stats').then(function (res) { S.stats = res; return res; });
+}
+
+/* ======================= 渲染：侧栏 ======================= */
+function toggleIn(arr, v) {
+  var i = arr.indexOf(v);
+  if (i < 0) arr.push(v); else arr.splice(i, 1);
+  return arr;
+}
+
+function fItem(label, on, count, color, data) {
+  return '<button class="fitem' + (on ? ' on' : '') + '" ' + data + '>' +
+    (color ? '<span class="dot" style="background:' + color + '"></span>' : '') +
+    '<span class="lb">' + esc(label) + '</span>' +
+    (count != null ? '<span class="ct">' + count + '</span>' : '') + '</button>';
+}
+
+function renderSidebar() {
+  var bySource = {}, byLevel = {}, byCat = {};
+  if (S.stats) {
+    (S.stats.by_source || []).forEach(function (r) { bySource[r.source] = r.cnt; });
+    (S.stats.by_level || []).forEach(function (r) { byLevel[r.level] = r.cnt; });
+    (S.stats.by_category || []).forEach(function (r) { byCat[r.category] = r.cnt; });
+  }
+  var h = '<div class="ftitle">来源</div>';
+  h += fItem('全部来源', S.source.length === 0, S.stats ? S.stats.total : null, null,
+    'data-kind="source" data-val=""');
+  ['wecom', 'outlook', 'manual', 'other'].forEach(function (k) {
+    h += fItem(SRC_LABEL[k], S.source.indexOf(k) >= 0, bySource[k] || 0, SRC_COLOR[k],
+      'data-kind="source" data-val="' + k + '"');
+  });
+  document.getElementById('fSource').innerHTML = h;
+
+  h = '<div class="ftitle">重要级别</div>';
+  h += fItem('全部级别', S.level.length === 0, null, null, 'data-kind="level" data-val=""');
+  ['urgent', 'important', 'normal'].forEach(function (k) {
+    h += fItem(LV_LABEL[k], S.level.indexOf(k) >= 0, byLevel[k] || 0, LV_COLOR[k],
+      'data-kind="level" data-val="' + k + '"');
+  });
+  document.getElementById('fLevel').innerHTML = h;
+
+  h = '<div class="ftitle">分类</div>';
+  h += fItem('全部分类', S.category.length === 0, null, null, 'data-kind="category" data-val=""');
+  S.categories.forEach(function (c) {
+    h += fItem(c.name, S.category.indexOf(c.name) >= 0, c.cnt || 0, c.color || 'var(--mute)',
+      'data-kind="category" data-val="' + esc(c.name) + '"');
+  });
+  document.getElementById('fCat').innerHTML = h;
+
+  var ranges = [['全部时间', '', ''], ['今天', todayStr(0), todayStr(0)],
+    ['近 7 天', todayStr(-6), todayStr(0)], ['近 30 天', todayStr(-29), todayStr(0)],
+    ['近 90 天', todayStr(-89), todayStr(0)]];
+  h = '<div class="ftitle">时间范围</div><div class="chiprow">';
+  ranges.forEach(function (r) {
+    var on = S.from === r[1] && S.to === r[2];
+    h += '<button class="chip' + (on ? ' on' : '') + '" data-kind="range" data-from="' + r[1] +
+      '" data-to="' + r[2] + '">' + r[0] + '</button>';
+  });
+  h += '</div><div class="daterow"><input type="date" id="dFrom" value="' + S.from + '">' +
+    '<span style="color:var(--mute)">~</span><input type="date" id="dTo" value="' + S.to + '"></div>';
+  document.getElementById('fTime').innerHTML = h;
+
+  h = '<div class="ftitle">其它</div>';
+  h += fItem('仅看置顶', S.pinned, null, null, 'data-kind="pinned" data-val="1"');
+  h += fItem('重置全部筛选', false, null, null, 'data-kind="reset" data-val=""');
+  document.getElementById('fOps').innerHTML = h;
+
+  var df = document.getElementById('dFrom'), dt = document.getElementById('dTo');
+  df.addEventListener('change', function () { S.from = df.value; S.page = 1; loadNotices(); renderSidebar(); });
+  dt.addEventListener('change', function () { S.to = dt.value; S.page = 1; loadNotices(); renderSidebar(); });
+}
+
+document.getElementById('sidebar').addEventListener('click', function (e) {
+  var btn = e.target.closest('[data-kind]');
+  if (!btn) return;
+  var kind = btn.getAttribute('data-kind'), val = btn.getAttribute('data-val');
+  if (kind === 'source') { if (!val) S.source = []; else toggleIn(S.source, val); }
+  else if (kind === 'level') { if (!val) S.level = []; else toggleIn(S.level, val); }
+  else if (kind === 'category') { if (!val) S.category = []; else toggleIn(S.category, val); }
+  else if (kind === 'pinned') { S.pinned = !S.pinned; }
+  else if (kind === 'range') { S.from = btn.getAttribute('data-from'); S.to = btn.getAttribute('data-to'); }
+  else if (kind === 'reset') {
+    S.q = ''; S.source = []; S.level = []; S.category = []; S.from = ''; S.to = ''; S.pinned = false;
+    document.getElementById('q').value = '';
+  }
+  S.page = 1; renderSidebar(); loadNotices();
+  if (kind === 'reset') renderAll();
+});
+
+/* ======================= 渲染：列表 ======================= */
+function cardHtml(n) {
+  var sc = n.source_color || SRC_COLOR[n.source] || 'var(--other)';
+  var lc = LV_COLOR[n.level] || 'var(--normal)';
+  var kws = S.q ? S.q.split(/\s+/).filter(Boolean) : [];
+  var h = '<article class="card' + (n.pinned ? ' pin' : '') + '" style="--sc:' + sc + '" data-id="' + n.id + '">';
+  h += '<div class="chead">';
+  h += '<span class="badge src">' + ic(SRC_ICON[n.source] || 'doc', 12) + esc(n.source_label) + '</span>';
+  h += '<span class="badge lv" style="--lc:' + lc + '">' + esc(n.level_label) + '</span>';
+  h += '<span class="badge cat">' + esc(n.category) + '</span>';
+  if (n.pinned) h += '<span class="badge pinned">' + ic('pin', 11) + '置顶</span>';
+  h += '</div>';
+  h += '<h3 class="ctitle">' + hl(n.title, kws) + '</h3>';
+  if (n.summary) h += '<p class="csum">' + hl(cleanSummary(n.summary), kws) + '</p>';
+  if (n.tags && n.tags.length) {
+    h += '<div class="tagline">' + n.tags.slice(0, 6).map(function (t) {
+      return '<span class="tag">#' + esc(t) + '</span>';
+    }).join('') + '</div>';
+  }
+  h += '<div class="cfoot">';
+  if (n.publisher) h += '<span class="mi">' + ic('user', 13) + '<span>' + esc(n.publisher) + '</span></span>';
+  if (n.source_name) h += '<span class="mi">' + ic(SRC_ICON[n.source] || 'doc', 13) + '<span>' + esc(n.source_name) + '</span></span>';
+  h += '<span class="mi">' + ic('clock', 13) + '<span title="' + esc(n.published_at) + '">' +
+    esc(fmtDT(n.published_at)) + '（' + esc(timeAgo(n.published_at)) + '）</span></span>';
+  h += '</div></article>';
+  return h;
+}
+
+function tableHtml() {
+  var h = '<div class="tablewrap"><table><thead><tr>' +
+    '<th style="width:96px">来源</th><th>标题 / 摘要</th><th style="width:104px">分类</th>' +
+    '<th style="width:74px">级别</th><th style="width:108px">发布人</th>' +
+    '<th style="width:158px">发布时间</th></tr></thead><tbody>';
+  S.items.forEach(function (n) {
+    var sc = SRC_COLOR[n.source] || 'var(--other)';
+    var lc = LV_COLOR[n.level] || 'var(--normal)';
+    h += '<tr data-id="' + n.id + '">';
+    h += '<td><span class="dotsc" style="--sc:' + sc + '"></span>' + esc(n.source_label) + '</td>';
+    h += '<td class="t-main"><div class="tt">' + esc(n.pinned ? '【置顶】' : '') + esc(n.title) + '</div>' +
+      '<div class="ss">' + esc(cleanSummary(n.summary)) + '</div></td>';
+    h += '<td>' + esc(n.category) + '</td>';
+    h += '<td><span class="badge lv" style="--lc:' + lc + '">' + esc(n.level_label) + '</span></td>';
+    h += '<td>' + esc(n.publisher || '—') + '</td>';
+    h += '<td style="color:var(--dim);white-space:nowrap">' + esc(fmtDT(n.published_at)) + '</td>';
+    h += '</tr>';
+  });
+  return h + '</tbody></table></div>';
+}
+
+function emptyHtml() {
+  var active = S.q || S.source.length || S.level.length || S.category.length || S.from || S.to || S.pinned;
+  return '<div class="empty">' + ic('search', 30) + '<b>' +
+    (active ? '没有符合条件的通知' : '还没有任何通知') + '</b>' +
+    (active ? '试试放宽筛选条件，或清空搜索关键词' :
+      '点右上角「导入」按钮，粘贴文本 / 上传 CSV、JSON、XLSX、.eml 文件即可批量归档') + '</div>';
+}
+
+function renderList() {
+  var area = document.getElementById('listArea');
+  if (!S.items.length) { area.innerHTML = emptyHtml(); return; }
+  area.innerHTML = S.view === 'card'
+    ? '<div class="cards">' + S.items.map(cardHtml).join('') + '</div>'
+    : tableHtml();
+}
+
+function renderCount() {
+  var bits = [];
+  bits.push('共 <b>' + S.total + '</b> 条');
+  if (S.q) bits.push('关键词 <b>' + esc(S.q) + '</b>');
+  var f = [];
+  if (S.source.length) f.push(S.source.map(function (s) { return SRC_LABEL[s]; }).join('/'));
+  if (S.level.length) f.push(S.level.map(function (l) { return LV_LABEL[l]; }).join('/'));
+  if (S.category.length) f.push(S.category.join('/'));
+  if (S.from || S.to) f.push((S.from || '不限') + ' ~ ' + (S.to || '不限'));
+  if (S.pinned) f.push('仅置顶');
+  if (f.length) bits.push('筛选：' + f.map(esc).join(' · '));
+  document.getElementById('count').innerHTML = bits.join('　');
+}
+
+function renderPager() {
+  var el = document.getElementById('pager');
+  if (S.pages <= 1) { el.innerHTML = ''; return; }
+  var h = '<button ' + (S.page <= 1 ? 'disabled' : '') + ' data-p="' + (S.page - 1) + '">' + ic('left', 15) + '</button>';
+  var pages = [];
+  for (var i = 1; i <= S.pages; i++) {
+    if (i === 1 || i === S.pages || Math.abs(i - S.page) <= 1) pages.push(i);
+    else if (pages[pages.length - 1] !== '…') pages.push('…');
+  }
+  pages.forEach(function (p) {
+    if (p === '…') h += '<button disabled>…</button>';
+    else h += '<button class="' + (p === S.page ? 'on' : '') + '" data-p="' + p + '">' + p + '</button>';
+  });
+  h += '<button ' + (S.page >= S.pages ? 'disabled' : '') + ' data-p="' + (S.page + 1) + '">' + ic('right', 15) + '</button>';
+  el.innerHTML = h;
+}
+
+document.getElementById('pager').addEventListener('click', function (e) {
+  var b = e.target.closest('[data-p]');
+  if (!b) return;
+  S.page = parseInt(b.getAttribute('data-p'), 10);
+  loadNotices();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+document.getElementById('listArea').addEventListener('click', function (e) {
+  var row = e.target.closest('[data-id]');
+  if (row) openDetail(parseInt(row.getAttribute('data-id'), 10));
+});
+
+/* ======================= 列表右键菜单 =======================
+   右键某条通知直接出「编辑 / 置顶 / 删除」，不用先点开详情再点底部按钮。
+   编辑/置顶/删除只有管理员有；普通用户只有查看和复制标题。
+   样式复用 common.css 里的 .ctxmenu（两个页面共用）。 */
+var noticeCtxEl = null, noticeCtxId = 0;
+
+function closeNoticeCtx() {
+  if (noticeCtxEl && noticeCtxEl.parentNode) noticeCtxEl.parentNode.removeChild(noticeCtxEl);
+  noticeCtxEl = null;
+  noticeCtxId = 0;
+}
+
+function noticeById(id) {
+  var its = S.items || [];
+  for (var i = 0; i < its.length; i++) if (its[i].id === id) return its[i];
+  return null;
+}
+
+function openNoticeCtxMenu(x, y, id) {
+  closeNoticeCtx();
+  var it = noticeById(id);
+  if (!it) return;
+  noticeCtxId = id;
+  var rows = [];
+  rows.push('<button data-nctx="view">' + ic('eye', 14) + '查看详情</button>');
+  rows.push('<button data-nctx="copy">' + ic('copy', 14) + '复制标题</button>');
+  if (isAdmin()) {
+    rows.push('<div class="ctxline"></div>');
+    rows.push('<button data-nctx="edit">' + ic('edit', 14) + '编辑这条</button>');
+    rows.push('<button data-nctx="pin">' + ic('pin', 14) +
+      (it.pinned ? '取消置顶' : '置顶') + '</button>');
+    rows.push('<button data-nctx="del" class="danger">' + ic('trash', 14) + '删除这条</button>');
+  }
+  var el = document.createElement('div');
+  el.className = 'ctxmenu';
+  el.setAttribute('role', 'menu');
+  el.innerHTML = '<div class="ctxname" title="' + esc(it.title || '') + '">' +
+    esc(it.title || '(无标题)') + '</div>' + rows.join('');
+  document.body.appendChild(el);
+  var r = el.getBoundingClientRect();
+  el.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + 'px';
+  el.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) + 'px';
+  noticeCtxEl = el;
+}
+
+/* 写成具名函数，方便测试直接调用（测试只抽取函数，不执行顶层语句） */
+function bindNoticeCtxMenu() {
+  var area = document.getElementById('listArea');
+  if (!area) return;
+  area.addEventListener('contextmenu', function (e) {
+    var row = e.target.closest('[data-id]');
+    if (!row) return;
+    e.preventDefault();
+    openNoticeCtxMenu(e.clientX, e.clientY, parseInt(row.getAttribute('data-id'), 10));
+  });
+}
+bindNoticeCtxMenu();
+
+document.addEventListener('click', function (e) {
+  if (!noticeCtxEl) return;
+  var btn = e.target.closest('[data-nctx]');
+  if (!btn) {
+    /* 点菜单外面：只关菜单；若点的是另一行，把这次点击吃掉，避免连带打开详情 */
+    var onRow = e.target.closest ? e.target.closest('#listArea [data-id]') : null;
+    closeNoticeCtx();
+    if (onRow) { e.stopPropagation(); e.preventDefault(); }
+    return;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  var act = btn.getAttribute('data-nctx');
+  var id = noticeCtxId;
+  var it = noticeById(id) || {};
+  closeNoticeCtx();
+  if (!id) return;
+
+  if (act === 'view') return openDetail(id);
+  if (act === 'copy') return copyText(it.title || '');
+
+  if (act === 'edit') {
+    return api('/api/notices/' + id).then(function (res) {
+      openEditor(res.item);
+    }).catch(function (err) { toast(err.message, 'err'); });
+  }
+  if (act === 'pin') {
+    return api('/api/notices/' + id, { method: 'PUT', body: { pinned: it.pinned ? 0 : 1 } })
+      .then(function () { loadNotices(); toast('已更新置顶状态', 'ok'); })
+      .catch(function (err) { toast(err.message, 'err'); });
+  }
+  if (act === 'del') {
+    if (!confirm('确定删除这条通知？\n\n' + (it.title || ''))) return;
+    return api('/api/notices/' + id, { method: 'DELETE' }).then(function () {
+      loadNotices();
+      loadStats().then(renderSidebar);
+      toast('已删除', 'ok');
+    }).catch(function (err) { toast(err.message, 'err'); });
+  }
+}, true);
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && noticeCtxEl) closeNoticeCtx();
+});
+window.addEventListener('blur', closeNoticeCtx);
+window.addEventListener('resize', closeNoticeCtx);
+document.addEventListener('scroll', function () { if (noticeCtxEl) closeNoticeCtx(); }, true);
+
+function openDetail(id, push) {
+  api('/api/notices/' + id).then(function (res) {
+    var n = res.item;
+    var sc = SRC_COLOR[n.source] || 'var(--other)';
+    var lc = LV_COLOR[n.level] || 'var(--normal)';
+    var h = '<div class="modal wide" style="--sc:' + sc + '">';
+    h += '<div class="mhead"><div style="flex:1;min-width:0">';
+    h += '<div class="chead" style="margin-bottom:9px">' +
+      '<span class="badge src">' + ic(SRC_ICON[n.source] || 'doc', 12) + esc(n.source_label) + '</span>' +
+      '<span class="badge lv" style="--lc:' + lc + '">' + esc(n.level_label) + '</span>' +
+      '<span class="badge cat">' + esc(n.category) + '</span>' +
+      (n.pinned ? '<span class="badge pinned">' + ic('pin', 11) + '置顶</span>' : '') + '</div>';
+    h += '<h3>' + esc(n.title) + '</h3></div>';
+    h += '<button class="btn icon ghost" data-act="close">' + ic('close', 17) + '</button></div>';
+    h += '<div class="mbody">';
+    h += '<dl class="meta">';
+    h += '<dt>发布时间</dt><dd>' + esc(fmtDT(n.published_at)) + '　<span style="color:var(--mute)">' +
+      esc(timeAgo(n.published_at)) + '</span></dd>';
+    h += '<dt>入库时间</dt><dd>' + esc(fmtDT(n.received_at)) + '</dd>';
+    h += '<dt>发布人</dt><dd>' + esc(n.publisher || '—') + '</dd>';
+    h += '<dt>' + (n.source === 'outlook' ? '发件人' : '来源会话') + '</dt><dd>' +
+      esc(n.source_name || n.sender || '—') + (n.sender && n.source_name ? '　&lt;' + esc(n.sender) + '&gt;' : '') + '</dd>';
+    if (n.tags && n.tags.length) h += '<dt>标签</dt><dd>' + n.tags.map(function (t) {
+      return '<span class="tag">#' + esc(t) + '</span>';
+    }).join(' ') + '</dd>';
+    if (n.attachments && n.attachments.length) h +=
+      '<dt>附件</dt><dd>' + renderAttachList(n.attachments) + '</dd>';
+    h += '<dt>通知 ID</dt><dd style="font-family:ui-monospace,monospace">#' + n.id + '　' +
+      '<span style="color:var(--mute)">' + esc(n.ext_id || '') + '</span></dd>';
+    h += '</dl>';
+    if (n.origin) h += '<div class="notice" style="margin-bottom:14px">' + ic('info', 15) +
+      '<div><b>邮件头信息</b><br>' + esc(n.origin).replace(/\n/g, '<br>') + '</div></div>';
+    h += '<div class="contentbox">' + (n.content ? linkify(n.content) : '<span style="color:var(--mute)">（无正文）</span>') + '</div>';
+    h += '</div>';
+    h += '<div class="mfoot"><button class="btn" data-act="copy">' + ic('copy', 15) + '复制正文</button>';
+    if (isAdmin()) {
+      h += '<button class="btn" data-act="pin">' + ic('pin', 15) +
+        (n.pinned ? '取消置顶' : '置顶') + '</button>';
+      h += '<span class="spacer"></span>';
+      h += '<button class="btn danger" data-act="del">' + ic('trash', 15) + '删除</button>';
+      h += '<button class="btn primary" data-act="edit">' + ic('edit', 15) + '编辑</button>';
+    } else {
+      h += '<span class="spacer"></span>';
+      h += '<span style="color:var(--mute);font-size:12.5px;align-self:center">当前为查看权限，只能浏览</span>';
+    }
+    h += '</div></div>';
+    mountModal(h);
+    var modal = document.querySelector('.mask .modal');
+    modal.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-act]');
+      if (!b) return;
+      var act = b.getAttribute('data-act');
+      if (act === 'close') closeModal();
+      else if (act === 'copy') copyText(n.title + '\n\n' + (n.content || ''));
+      else if (act === 'edit') openEditor(n);
+      else if (act === 'pin') {
+        api('/api/notices/' + n.id, { method: 'PUT', body: { pinned: n.pinned ? 0 : 1 } })
+          .then(function () { closeModal(); loadNotices(); toast('已更新置顶状态', 'ok'); })
+          .catch(function (err) { toast(err.message, 'err'); });
+      } else if (act === 'del') {
+        if (!confirm('确定删除这条通知？\n\n' + n.title)) return;
+        api('/api/notices/' + n.id, { method: 'DELETE' }).then(function () {
+          closeModal(); loadNotices(); loadStats().then(renderSidebar);
+          toast('已删除', 'ok');
+        }).catch(function (err) { toast(err.message, 'err'); });
+      }
+    });
+    if (push !== false) history.pushState({ id: id }, '', '#notice-' + id);
+  }).catch(function (err) { toast(err.message, 'err'); });
+}
+
+/* ======================= 新增 / 编辑 ======================= */
+function catOptions(sel) {
+  var names = S.categories.map(function (c) { return c.name; });
+  if (sel && names.indexOf(sel) < 0) names.unshift(sel);
+  return names.map(function (n) {
+    return '<option value="' + esc(n) + '"' + (n === sel ? ' selected' : '') + '>' + esc(n) + '</option>';
+  }).join('');
+}
+
+function openEditor(n) {
+  n = n || {};
+  var isNew = !n.id;
+  var h = '<div class="modal"><div class="mhead"><h3>' + (isNew ? '新增通知' : '编辑通知') + '</h3>' +
+    '<button class="btn icon ghost" data-act="close">' + ic('close', 17) + '</button></div>';
+  h += '<div class="mbody">';
+  h += '<div class="field"><label>标题 *</label><input id="eTitle" value="' + esc(n.title || '') +
+    '" placeholder="保留原始前缀，如【重要】xxx"></div>';
+  h += '<div class="grid2">';
+  h += '<div class="field"><label>来源</label><select id="eSource">' +
+    ['wecom', 'outlook', 'manual', 'other'].map(function (k) {
+      return '<option value="' + k + '"' + ((n.source || 'manual') === k ? ' selected' : '') + '>' +
+        SRC_LABEL[k] + '</option>';
+    }).join('') + '</select></div>';
+  h += '<div class="field"><label>重要级别</label><select id="eLevel">' +
+    ['urgent', 'important', 'normal'].map(function (k) {
+      return '<option value="' + k + '"' + ((n.level || 'normal') === k ? ' selected' : '') + '>' +
+        LV_LABEL[k] + '</option>';
+    }).join('') + '</select></div>';
+  h += '</div>';
+  h += '<div class="grid2">';
+  h += '<div class="field"><label>分类</label><select id="eCat">' + catOptions(n.category || '未分类') + '</select></div>';
+  h += '<div class="field"><label>发布时间</label><input id="ePub" placeholder="YYYY-MM-DD HH:MM:SS" value="' +
+    esc(n.published_at || '') + '"></div>';
+  h += '</div>';
+  h += '<div class="grid2">';
+  h += '<div class="field"><label>发布人</label><input id="ePublisher" value="' + esc(n.publisher || '') + '"></div>';
+  h += '<div class="field"><label>群名称 / 发件人</label><input id="eSourceName" value="' +
+    esc(n.source_name || n.sender || '') + '"></div>';
+  h += '</div>';
+  h += '<div class="field"><label>标签（逗号分隔）</label><input id="eTags" value="' +
+    esc((n.tags || []).join(', ')) + '" placeholder="割接, 机房, 核心交换机"></div>';
+  h += '<div class="field"><label>正文</label><textarea id="eContent" placeholder="粘贴通知原文…">' +
+    esc(n.content || '') + '</textarea>';
+  h += '<div class="hint">同一条通知重复导入时，系统按「来源 + 标题 + 发布时间」自动去重，不会产生重复记录。</div>';
+  h += '</div></div>';
+  h += '<div class="mfoot"><label style="display:flex;align-items:center;gap:7px;color:var(--dim);font-size:13px">' +
+    '<input type="checkbox" id="ePinned" ' + (n.pinned ? 'checked' : '') + ' style="width:auto"> 置顶</label>' +
+    '<span class="spacer"></span>' +
+    '<button class="btn" data-act="close">取消</button>' +
+    '<button class="btn primary" data-act="save">' + ic('check', 15) + '保存</button></div></div>';
+  mountModal(h);
+  document.querySelector('.mask .modal').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'close') return closeModal();
+    if (act === 'save') {
+      var body = {
+        title: document.getElementById('eTitle').value,
+        source: document.getElementById('eSource').value,
+        level: document.getElementById('eLevel').value,
+        category: document.getElementById('eCat').value,
+        published_at: document.getElementById('ePub').value,
+        publisher: document.getElementById('ePublisher').value,
+        source_name: document.getElementById('eSourceName').value,
+        tags: document.getElementById('eTags').value,
+        content: document.getElementById('eContent').value,
+        pinned: document.getElementById('ePinned').checked ? 1 : 0
+      };
+      if (!body.title.trim()) return toast('标题不能为空', 'err');
+      var req = isNew
+        ? api('/api/notices', { method: 'POST', body: body })
+        : api('/api/notices/' + n.id, { method: 'PUT', body: body });
+      req.then(function () {
+        closeModal(); loadCategories(); loadNotices(); loadStats().then(renderSidebar);
+        toast(isNew ? '已新增' : '已保存', 'ok');
+      }).catch(function (err) { toast(err.message, 'err'); });
+    }
+  });
+}
+
+/* ======================= 导入 ======================= */
+var IMPORT_EXAMPLE =
+  '来源: 企微\n' +
+  '群名称: 运维值班群\n' +
+  '发布人: Gavin Feng\n' +
+  '发布时间: 2026-09-15 10:30\n' +
+  '分类: 网络变更\n' +
+  '级别: 紧急\n' +
+  '标签: 割接, 机房\n' +
+  '\n' +
+  '【重要】9月18日广州机房核心交换机版本升级\n' +
+  '计划于 9 月 18 日 00:00-04:00 对核心交换机做版本升级，期间业务中断不超过 90 秒。\n' +
+  '---\n' +
+  '来源: Outlook\n' +
+  '发布时间: 2026-09-12 09:05\n' +
+  '分类: 安全通告\n' +
+  '级别: 重要\n' +
+  '\n' +
+  'FortiClient EMS 7.4 强制升级\n' +
+  '请在 9 月 30 日前完成客户端升级，否则将被拒绝接入内网。';
+
+/* ======================= 一键整理（规则版，不联网、不调模型） =======================
+   能做到：认头部字段 / 摘出要点行并编号 / 行动句加粗 / 顶部补「关键字」。
+   做不到：真正的语义归纳（那需要模型）。所以正文原样保留，只把重点标出来。
+   ⚠️ 正文第一行是服务端认的标题，必须留在最前面，不能让「关键字」抢位。 */
+var POLISH_HDR = /^\s*(来源|群名称|群|发布人|发件人|发布时间|时间|日期|分类|类型|级别|重要级别|标签|外部ID|消息ID|群\/发件人)\s*[:：]\s*\S/;
+
+var POLISH_BULLET = /^\s*(?:[-*·•—]|\(?\d{1,2}[.)、]|[①②③④⑤⑥⑦⑧⑨⑩]|第[一二三四五六七八九十]+[、.)])\s*/;
+
+var POLISH_ACTION = /(请|需|务必|必须|立即|尽快|及时|截止|前完成|禁止|注意|告警|异常|超过|不低于|联系|反馈|确认|安排|升级|割接|回滚|中断|停机|排查)/;
+
+var POLISH_STOP = ['重要通知', '重要', '通知', '关于', '如下', '以下', '各位', '同事', '我们', '可以',
+                   '进行', '相关', '后续', '目前', '已经', '问题', '情况', '大家好', '谢谢'];
+
+/* 业务词表：命中就优先当关键字（比按字频瞎切准得多，也避免切出「口监控与告警」这种碎片）。
+   维护方式：往里面加词即可，越贴近你们日常的叫法越好用。 */
+var POLISH_LEXICON = ['SLA', 'SASE', 'ZTNA', 'SDWAN', 'IPVPN', 'MPLS', 'VPN', 'DIA', 'BGP', 'POP', 'CPE',
+                      'IPsec', 'FortiGate', 'Fortinet', 'SNOW', 'NAT', 'DNS', 'DHCP', 'QoS', 'MTU',
+                      '监控', '告警', '割接', '故障', '中断', '回滚', '排查', '巡检',
+                      '线路', '专线', '带宽', '流量', '延时', '丢包', '可用性', '路由', '拓扑',
+                      '扩容', '迁移', '证书', '域名', '端口', '防火墙', '交换机', '路由器', '链路',
+                      '隧道', '建连', '光猫', '会话表', '公网IP', '回收', '重启', '号码认证', '认证',
+                      '呼叫', '热线', '审批', '权限', '配置调整', '版本升级', '变更窗口',
+                      '钻石客户', '铂金客户', '订单', '验收', '交接', '工单号', '备件', '扩容窗口'];
+
+/* 低区分度词：出现频率高但说明不了「这条通知讲什么」，降权后仅用于补位 */
+var POLISH_GENERIC = ['客户', '供应商', '邮件', '工单', '变更', '设备', '版本', '升级', '值班',
+                      '操作', '培训', '流程', '规范', '维护', '通知', '系统', '订单'];
+
+/* 纯噪音：任何情况下都不该当标签 */
+var POLISH_NOISE = ['目前', '后续', '相关', '注意', '注意事项', '事项', '要求', '同事', '公司',
+                    '情况', '问题', '大家', '谢谢', '如下', '以下', '关于', '重要通知', '重要'];
+
+function polishKeywords(text, title) {
+  var titleLine = (title || '').split('\n')[0];
+  var score = {};
+  function tally(w, weight, titleBoost) {
+    var re = new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    var n = (text.match(re) || []).length;
+    if (!n) return;
+    var v = n * weight + (titleLine.indexOf(w) >= 0 ? titleBoost : 0);
+    if (score[w] == null || v > score[w]) score[w] = v;
+  }
+  /* 业务词：长词更具体，额外加分（与 polish_rules.py 完全一致） */
+  POLISH_LEXICON.forEach(function (w) { tally(w, 4, 6); });
+  POLISH_LEXICON.forEach(function (w) {
+    if (score[w] != null) score[w] += 3 + Math.min(w.length, 10) * 2;
+  });
+  /* 泛词：权重低一个量级，避免挤掉具体词 */
+  POLISH_GENERIC.forEach(function (w) { tally(w, 1, 3); });
+  /* 纯噪音直接剔除 */
+  POLISH_NOISE.forEach(function (w) { delete score[w]; });
+
+  // 英文/数字代号（YSGJ、HAHY、EMS7.4、85% 之类）也算关键字
+  (text.match(/[A-Za-z][A-Za-z0-9._-]{1,20}/g) || []).forEach(function (w) {
+    if (/^(Dear|Hi|Hello|Thanks|Best|Regards|Team|Please|From|Sent|Subject|To|Cc|OK|PS)$/i.test(w)) return;
+    if (score[w] == null) score[w] = 0;
+    score[w] += 1 + (titleLine.indexOf(w) >= 0 ? 2 : 0);
+  });
+  for (var k in score) {
+    if (score[k] <= 1 && !/[A-Z]{2,}/.test(k)) delete score[k];
+  }
+  function order(ws) {
+    return ws.sort(function (a, b) {
+      return score[b] - score[a] || text.indexOf(a) - text.indexOf(b);
+    });
+  }
+  /* 具体词优先；泛词只在具体词不足 3 个时补位 */
+  var spec = Object.keys(score).filter(function (w) { return POLISH_GENERIC.indexOf(w) < 0; });
+  var gen = Object.keys(score).filter(function (w) { return POLISH_GENERIC.indexOf(w) >= 0; });
+  var ordered = order(spec);
+  if (ordered.length < 3) ordered = ordered.concat(order(gen));
+
+  var out = [], seen = [];
+  ordered.forEach(function (w) {
+    if (out.length >= 5) return;
+    if (seen.some(function (x) { return x.indexOf(w) >= 0 || w.indexOf(x) >= 0; })) return;
+    seen.push(w); out.push(w);
+  });
+  return out;
+}
+
+
+/* 标题行不能拿这些行来充当（和 server.py 的 is_title_junk 保持一致） */
+var POLISH_TITLE_LABEL = /^\s*(?:【(?:重要|紧急)?通知】|(?:重要|紧急)?(?:通知|公告|提醒|说明|注意事项|温馨提示))\s*[:：]?\s*$/;
+
+var POLISH_TITLE_GREET = /^\s*(?:Dear\b[^,，]{0,30}[,，]?|Hi\b[^,，]{0,20}[,，]?|Hello\b|各位(?:同事|领导|老师)?[好，,:：]*|大家好[，。!！:：]*|您好[，。!！:：]*|早上好|下午好)\s*$/i;
+
+var POLISH_TITLE_CLOSING = /^\s*(?:Best\s+Regards|Regards|Thanks|Thank\s+you|BR|Sincerely|此致|敬礼|谢谢|多谢)\s*[,，。.!！]?\s*$/i;
+
+var POLISH_TITLE_SIGN = /(Telstra\s*PBS|This communication may contain|保密声明|www\.telstra)/i;
+
+var POLISH_TITLE_SIGN_SHORT = /(@telstra-pbs|400 700 2800)/i;   // 只在短行里算签名
+var POLISH_MAILHDR = /^\s*(?:From|Sent|To|Cc|Bcc|Subject|发件人|发送时间|收件人|抄送|主题)\s*[:：]\s*\S/i;
+
+function isTitleJunk(line) {
+  var t = (line || '').trim();
+  if (!t) return true;
+  if (POLISH_TITLE_LABEL.test(t) || POLISH_TITLE_GREET.test(t) || POLISH_TITLE_CLOSING.test(t) ||
+      POLISH_TITLE_SIGN.test(t) || (t.length <= 40 && POLISH_TITLE_SIGN_SHORT.test(t)) ||
+      POLISH_MAILHDR.test(t)) return true;
+  if (/^[\s\-–—_=*#·•.，。；;、!！?？:：()（）\[\]【】]+$/.test(t)) return true;
+  if (/^(https?:\/\/\S+|!\[[^\]]*\]\(\S+\))$/.test(t)) return true;
+  if (/^[A-Za-z][A-Za-z.\-]*(?:\s+[A-Za-z][A-Za-z.\-]*){1,3}$/.test(t)) return true;
+  if (POLISH_HDR.test(t)) return true;
+  return false;
+}
+
+/* 从正文里挑出当标题的那一行：跳过标签/问候/落款，遇到「重要通知：」这类标签就拼进去 */
+function pickTitleLine(lines) {
+  var label = '', labelIdx = -1, titleIdx = -1;
+  for (var i = 0; i < lines.length; i++) {
+    var t = (lines[i] || '').trim();
+    if (!t) continue;
+    if (POLISH_TITLE_LABEL.test(t)) { if (titleIdx < 0) { label = t.replace(/[:：]\s*$/, ''); labelIdx = i; } continue; }
+    if (isTitleJunk(t)) continue;
+    titleIdx = i;
+    break;
+  }
+  if (titleIdx < 0) return { title: '', drops: [] };
+  var sep = /[】\])）]$/.test(label) ? '' : '：';
+  var title = (label && labelIdx < titleIdx ? label + sep : '') + lines[titleIdx].trim();
+  title = title.replace(/\s+/g, ' ').slice(0, 200);   // 不截断成短句：截断只由服务端做（只影响标题字段），正文必须保留全文
+  var drops = [titleIdx];
+  if (labelIdx >= 0 && labelIdx < titleIdx) drops.push(labelIdx);
+  return { title: title, drops: drops };
+}
+
+function polishRecord(block) {
+  var lines = block.split('\n');
+  // 头部区 = 第一个空行之前；整篇没有空行就看前 12 行。
+  // 这样「标题在前、键值字段在后」的写法也能把字段认出来并提到顶部。
+  var blankIdx = -1;
+  for (var bi2 = 0; bi2 < lines.length; bi2++) {
+    if (!lines[bi2].trim()) { blankIdx = bi2; break; }
+  }
+  var headEnd = blankIdx >= 0 ? blankIdx : Math.min(lines.length, 12);
+  var head = [], rest = [];
+  lines.forEach(function (ln, i) {
+    var t = ln.trim();
+    if (i < headEnd && t && POLISH_HDR.test(ln)) { head.push(t); return; }
+    rest.push(ln);
+  });
+
+  // 挑出当标题的那一行：跳过标签/问候/落款，必要时把「重要通知：」拼进去，并从正文里摘掉
+  var picked = pickTitleLine(rest);
+  var titleLine = picked.title;
+  if (picked.drops.length) {
+    rest = rest.filter(function (_, i) { return picked.drops.indexOf(i) < 0; });
+  }
+
+  var bullets = [], body = [];
+  rest.forEach(function (ln) {
+    var t = ln.trim();
+    if (!t) { body.push(ln); return; }
+    if (POLISH_BULLET.test(t)) { bullets.push(t.replace(POLISH_BULLET, '')); return; }
+    if (t.length <= 70 && POLISH_ACTION.test(t) && !/[。；;]$/.test(t)) { bullets.push(t); return; }
+    body.push(ln);
+  });
+
+  var out = head.slice();
+  if (titleLine) { if (out.length) out.push(''); out.push(titleLine); }
+  var kws = polishKeywords(block, titleLine);
+  if (kws.length) { out.push(''); out.push('关键字：' + kws.join(' / ')); }
+  if (bullets.length) {
+    out.push('');
+    out.push('【要点】');
+    bullets.forEach(function (b, i) { out.push((i + 1) + '. ' + b); });
+  }
+  if (body.join('').trim()) {
+    out.push('');
+    out.push('【正文】');
+    var started = false;
+    body.forEach(function (ln) {
+      var t = ln.trim();
+      if (!started) { if (!t) return; started = true; }   // 去掉正文开头多余的空行
+      if (t && t.length <= 160 && POLISH_ACTION.test(t)) out.push('**' + t + '**');
+      else out.push(ln);
+    });
+  }
+  return out.join('\n').trim();
+}
+
+function polishPaste() {
+  var ta = document.getElementById('impText');
+  if (!ta) return;
+  if (!ta.value.trim()) return toast('先粘贴内容再整理', 'err');
+  var blocks = ta.value.split(/^\s*-{3,}\s*$/m)
+    .map(function (b) { return b.trim() ? polishRecord(b) : ''; })
+    .filter(function (b) { return b.trim(); });
+  ta.value = blocks.join('\n---\n');
+  toast('已整理：头部字段归位 + 关键字 + 要点 + 重点加粗（规则版，不会语义归纳），核对后再导入', 'ok');
+}
+
+function openImport() {
+  var h = '<div class="modal wide"><div class="mhead"><h3>导入通知</h3>' +
+    '<button class="btn icon ghost" data-act="close">' + ic('close', 17) + '</button></div>';
+  h += '<div class="mbody">';
+  h += '<div class="tabs">' +
+    '<button class="on" data-tab="text">粘贴文本</button>' +
+    '<button data-tab="file">上传文件</button>' +
+    '<button data-tab="api">自动同步</button></div>';
+  h += '<div id="tab-text">';
+  h += '<div class="notice" style="margin-bottom:14px">' + ic('info', 15) + '<div>' +
+    '每条通知之间用一行 <b>---</b> 分隔。每条开头可以写 <b>键: 值</b> 头部（来源/群名称/发布人/发布时间/分类/级别/标签），' +
+    '空行之后的内容全部作为正文。<b>标题取正文第一行</b>，不用单独写。' +
+    '<br><b>截图直接 Ctrl+V 粘到输入框里</b>即可（会插进正文对应位置、详情页直接显示）；' +
+    '其他文件也可以拖进来或点「添加附件」，资料类附件会挂在通知的附件区。</div></div>';
+  h += '<div class="field"><textarea id="impText" style="min-height:250px" placeholder="把企微聊天记录或邮件正文粘贴到这里…&#10;&#10;截图可以直接 Ctrl+V 粘贴"></textarea></div>';
+  h += '<div class="attbox"><div class="attlist" id="attList"></div><div class="attbtns">' +
+    '<button class="btn" data-act="pickatt">' + ic('upload', 15) + '添加附件 / 图片</button>' +
+    '<input type="file" id="attInput" multiple hidden accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.log,.csv,.zip">' +
+    '<button class="btn" data-act="polish">' + ic('doc', 15) + '一键整理重点</button>' +
+    '<button class="btn" data-act="filldemo">' + ic('doc', 15) + '填入格式示例</button>' +
+    '</div><div class="hint">图片会插到正文光标处并显示出来；文档只进附件区。单个 ≤15MB。</div></div>';
+  h += '</div>';
+  h += '<div id="tab-file" hidden>';
+  h += '<div class="drop" id="dropZone">' + ic('upload', 26) +
+    '<b>点击选择文件，或把文件拖到这里</b>' +
+    '支持 .eml（Outlook 邮件原文）、.xlsx、.csv、.json、.txt、.md，可多选</div>';
+  h += '<input type="file" id="fileInput" multiple hidden accept=".eml,.xlsx,.csv,.json,.txt,.md,.log,.html">';
+  h += '<div class="filelist" id="fileList"></div>';
+  h += '<div class="hint">Outlook 里选中邮件 → 拖到桌面即为 .eml 文件；也可「另存为」导出。Excel 首行会作为表头匹配字段名。</div>';
+  h += '</div>';
+  h += '<div id="tab-api" hidden>';
+  h += '<div class="notice" style="margin-bottom:16px">' + ic('sync', 15) + '<div>' +
+    '当前为 <b>手动导入</b>模式。后续要接自动抓取时，采集器只需把数据 POST 到下面这个接口，' +
+    '系统按 <code>ext_id</code> 幂等去重，不需要改数据库和前端。</div></div>';
+  h += '<div style="font-size:12.5px;color:var(--dim);font-weight:600;margin-bottom:6px">入库接口</div>';
+  h += '<div class="kv"><code id="kvEndpoint">/api/ingest</code>' +
+    '<button class="btn icon ghost" data-act="copyep">' + ic('copy', 15) + '</button></div>';
+  h += '<div style="font-size:12.5px;color:var(--dim);font-weight:600;margin-bottom:6px">同步令牌（请求头 X-Sync-Token）</div>';
+  h += '<div class="kv"><code id="kvToken">加载中…</code>' +
+    '<button class="btn icon ghost" data-act="copytk">' + ic('copy', 15) + '</button></div>';
+  h += '<div style="font-size:12.5px;color:var(--dim);font-weight:600;margin:14px 0 6px">请求体示例</div>';
+  h += '<div class="rep">{\n  "items": [\n    {\n      "ext_id": "wecom-msgid-abc123",\n' +
+    '      "source": "wecom",\n      "source_name": "运维值班群",\n      "title": "【重要】xxx",\n' +
+    '      "content": "正文…",\n      "publisher": "Gavin Feng",\n' +
+    '      "published_at": "2026-09-15 10:30:00",\n      "category": "网络变更",\n' +
+    '      "level": "urgent",\n      "tags": ["割接"]\n    }\n  ]\n}</div>';
+  h += '<div class="hint" style="margin-top:12px">企微群机器人 Webhook 只能发不能收、自建应用读不到群历史，' +
+    '所以企微侧的自动入库走「群内转发到邮箱 → IMAP 拉取」。思路和你现有的 pa-wecom-forwarder 一致。</div>';
+  h += '</div>';
+  h += '</div>';
+  h += '<div class="mfoot"><span class="spacer"></span>' +
+    '<button class="btn" data-act="close">关闭</button>' +
+    '<button class="btn primary" data-act="doimport">' + ic('upload', 15) + '开始导入</button></div></div>';
+  mountModal(h);
+
+  var picked = [];
+  var modal = document.querySelector('.mask .modal');
+  var listEl = function () { return document.getElementById('fileList'); };
+  function renderFiles() {
+    listEl().innerHTML = picked.map(function (f, i) {
+      return '<div class="fi">' + ic('doc', 15) + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;' +
+        'white-space:nowrap">' + esc(f.name) + '</span>' +
+        '<span style="color:var(--mute);font-size:12px">' + (f.size / 1024).toFixed(1) + ' KB</span>' +
+        '<button class="btn icon ghost" data-rm="' + i + '">' + ic('close', 14) + '</button></div>';
+    }).join('');
+  }
+  listEl().addEventListener('click', function (e) {
+    var b = e.target.closest('[data-rm]');
+    if (b) { picked.splice(parseInt(b.getAttribute('data-rm'), 10), 1); renderFiles(); }
+  });
+  var dz = document.getElementById('dropZone');
+  var fi = document.getElementById('fileInput');
+  dz.addEventListener('click', function () { fi.click(); });
+  fi.addEventListener('change', function () {
+    Array.prototype.forEach.call(fi.files, function (f) { picked.push(f); });
+    renderFiles(); fi.value = '';
+  });
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.add('over'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove('over'); });
+  });
+  dz.addEventListener('drop', function (e) {
+    Array.prototype.forEach.call(e.dataTransfer.files, function (f) { picked.push(f); });
+    renderFiles();
+  });
+
+  /* ---------- 粘贴 tab：附件（Ctrl+V 截图 / 拖拽 / 选择） ---------- */
+  var attached = [];                    // 已上传到服务器的附件 [{name,url,size,image}]
+  var attInput = document.getElementById('attInput');
+  var ta = document.getElementById('impText');
+
+  function renderAtt() {
+    var el = document.getElementById('attList');
+    if (!el) return;
+    el.innerHTML = attached.map(function (a, i) {
+      return '<span class="attchip" title="' + esc(a.name) + '">' +
+        (a.image ? '<img src="' + a.url + '" alt="">' : ic('doc', 16)) +
+        '<b>' + esc(a.name) + '</b>' +
+        '<button class="btn icon ghost" data-rmatt="' + i + '">' + ic('close', 13) + '</button></span>';
+    }).join('');
+  }
+  function insertAtCursor(txt) {
+    if (!ta) return;
+    var s = ta.selectionStart == null ? ta.value.length : ta.selectionStart;
+    var e = ta.selectionEnd == null ? s : ta.selectionEnd;
+    var before = ta.value.slice(0, s), after = ta.value.slice(e);
+    var pre = (before && !/\n$/.test(before)) ? '\n' : '';
+    ta.value = before + pre + txt + '\n' + after;
+    var pos = (before + pre + txt + '\n').length;
+    ta.focus();
+    try { ta.setSelectionRange(pos, pos); } catch (err) { /* 忽略 */ }
+  }
+  function uploadFiles(files, atCursor) {
+    var arr = Array.prototype.slice.call(files || []);
+    if (!arr.length) return;
+    if (!isAdmin()) return toast('当前账号没有上传权限', 'err');
+    var fd = new FormData();
+    arr.forEach(function (f, i) {
+      var nm = f.name || ('截图-' + (attached.length + i + 1) + '.' +
+        ((f.type || 'image/png').split('/')[1] || 'png'));
+      fd.append('files', f, nm);
+    });
+    var hdrs = {};
+    var tk = getToken();
+    if (tk) hdrs['X-Session-Token'] = tk;
+    toast('上传中…', '');
+    fetch('/api/upload', { method: 'POST', body: fd, credentials: 'same-origin', headers: hdrs })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok) throw new Error(j.error || ('上传失败 ' + r.status));
+          return j;
+        });
+      })
+      .then(function (res) {
+        (res.items || []).forEach(function (it) {
+          attached.push(it);
+          // 图片插到光标处：正文里就能看到，点开是大图
+          if (it.image && atCursor) insertAtCursor('![' + it.name + '](' + it.url + ')');
+        });
+        renderAtt();
+        var bad = (res.errors || []).length;
+        toast('已添加 ' + (res.items || []).length + ' 个附件' + (bad ? '，' + bad + ' 个失败' : ''),
+              bad ? 'err' : 'ok');
+      })
+      .catch(function (err) { toast(err.message, 'err'); });
+  }
+  if (attInput) {
+    attInput.addEventListener('change', function () {
+      uploadFiles(attInput.files, true);
+      attInput.value = '';
+    });
+  }
+  if (ta) {
+    ta.addEventListener('paste', function (e) {
+      var items = (e.clipboardData && e.clipboardData.items) || [];
+      var imgs = [];
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file' && /^image\//.test(items[i].type)) {
+          var f = items[i].getAsFile();
+          if (f) imgs.push(f);
+        }
+      }
+      if (!imgs.length) return;           // 纯文本粘贴照旧，不拦
+      e.preventDefault();
+      uploadFiles(imgs, true);
+    });
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      ta.addEventListener(ev, function (e) { e.preventDefault(); ta.classList.add('over'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      ta.addEventListener(ev, function (e) { e.preventDefault(); ta.classList.remove('over'); });
+    });
+    ta.addEventListener('drop', function (e) {
+      var fs = (e.dataTransfer && e.dataTransfer.files) || [];
+      if (fs.length) uploadFiles(fs, true);
+    });
+  }
+
+  modal.addEventListener('click', function (e) {
+    var tab = e.target.closest('[data-tab]');
+    if (tab) {
+      var name = tab.getAttribute('data-tab');
+      Array.prototype.forEach.call(modal.querySelectorAll('[data-tab]'), function (t) {
+        t.classList.toggle('on', t === tab);
+      });
+      ['text', 'file', 'api'].forEach(function (k) {
+        document.getElementById('tab-' + k).hidden = (k !== name);
+      });
+      if (name === 'api' && !S.syncInfo) {
+        api('/api/sync/sources').then(function (res) {
+          S.syncInfo = res;
+          document.getElementById('kvToken').textContent = res.token;
+          document.getElementById('kvEndpoint').textContent =
+            location.origin + res.endpoint;
+        }).catch(function () { document.getElementById('kvToken').textContent = '获取失败'; });
+      }
+      return;
+    }
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'close') closeModal();
+    else if (act === 'filldemo') { document.getElementById('impText').value = IMPORT_EXAMPLE; }
+    else if (act === 'pickatt') { if (attInput) attInput.click(); }
+    else if (act === 'rmatt') {
+      attached.splice(parseInt(b.getAttribute('data-rmatt'), 10), 1);
+      renderAtt();
+    }
+    else if (act === 'polish') polishPaste();
+    else if (act === 'copyep') copyText(location.origin + '/api/ingest');
+    else if (act === 'copytk') copyText(document.getElementById('kvToken').textContent);
+    else if (act === 'doimport') {
+      var activeTab = modal.querySelector('[data-tab].on');
+      var which = activeTab ? activeTab.getAttribute('data-tab') : 'text';
+      var btn = b;
+      btn.disabled = true;
+      var done = function (msg, kind) {
+        btn.disabled = false;
+        if (!msg) return;
+        toast(msg, kind);
+        closeModal(); loadCategories(); loadNotices(); loadStats().then(renderSidebar);
+      };
+      if (which === 'text') {
+        var text = document.getElementById('impText').value;
+        if (!text.trim()) return done('请先粘贴内容', 'err');
+        if (/^\s*标题\s*[:：]/m.test(text) &&
+            !confirm('提醒：头部里的「标题:」会把后面的「来源 / 分类 / 级别」等字段吞进正文（服务端的既有行为，不是这次改出来的）。\n\n' +
+                     '建议：删掉那一行，让正文第一行直接当标题。\n\n仍然继续导入？')) {
+          return done('');
+        }
+        api('/api/import', { method: 'POST', body: { text: text, attachments: attached } })
+          .then(function (res) {
+            done('导入完成：新增 ' + res.created + ' 条，跳过重复 ' + res.updated + ' 条' +
+                 (attached.length ? '，附件 ' + attached.length + ' 个' : ''), 'ok');
+          }).catch(function (err) { done(err.message, 'err'); });
+      } else if (which === 'file') {
+        if (!picked.length) return done('请先选择文件', 'err');
+        var fd = new FormData();
+        picked.forEach(function (f) { fd.append('files', f, f.name); });
+        api('/api/import', { method: 'POST', body: fd }).then(function (res) {
+          var rep = (res.report || []).map(function (r) {
+            return r.file + '：解析 ' + r.parsed + ' 条' + (r.error ? '（失败：' + r.error + '）' : '');
+          }).join('\n');
+          toast('导入完成：新增 ' + res.created + ' 条，跳过重复 ' + res.skipped + ' 条', 'ok');
+          var area = document.getElementById('modalRoot').querySelector('.mbody');
+          if (area) {
+            var d = document.createElement('div');
+            d.className = 'rep';
+            d.textContent = rep;
+            area.appendChild(d);
+          }
+          btn.disabled = false;
+          loadCategories(); loadNotices(); loadStats().then(renderSidebar);
+        }).catch(function (err) { done(err.message, 'err'); });
+      } else {
+        done('');
+      }
+    }
+  });
+}
+
+/* ======================= 导出 ======================= */
+function doExport(fmt) {
+  var p = queryParams();
+  delete p.page; delete p.size;
+  p.format = fmt;
+  var hdrs = {};
+  var tk = getToken();
+  if (tk) hdrs['X-Session-Token'] = tk;
+  fetch('/api/export?' + new URLSearchParams(p).toString(),
+        { credentials: 'same-origin', headers: hdrs })
+    .then(function (r) {
+      if (r.status === 401) setToken('');
+      if (!r.ok) throw new Error('导出失败 (' + r.status + ')');
+      var name = 'notices-' + todayStr(0).replace(/-/g, '') + '.' + fmt;
+      var cd = r.headers.get('content-disposition') || '';
+      var m = cd.match(/filename="([^"]+)"/);
+      if (m) name = m[1];
+      return r.blob().then(function (b) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(b);
+        a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+        toast('已导出 ' + name, 'ok');
+      });
+    }).catch(function (err) { toast(err.message, 'err'); });
+}
+
+/* ======================= 统计 ======================= */
+function openStats() {
+  loadStats().then(function (res) {
+    var t = res.total || 0;
+    var h = '<div class="modal wide"><div class="mhead"><h3>数据统计</h3>' +
+      '<button class="btn icon ghost" data-act="close">' + ic('close', 17) + '</button></div><div class="mbody">';
+    h += '<div class="statgrid">';
+    h += '<div class="statcard"><div class="n">' + t + '</div><div class="l">通知总数</div></div>';
+    var urgent = (res.by_level || []).filter(function (r) { return r.level === 'urgent'; })[0];
+    var imp = (res.by_level || []).filter(function (r) { return r.level === 'important'; })[0];
+    h += '<div class="statcard"><div class="n" style="color:var(--urgent)">' +
+      (urgent ? urgent.cnt : 0) + '</div><div class="l">紧急通知</div></div>';
+    h += '<div class="statcard"><div class="n" style="color:var(--important)">' +
+      (imp ? imp.cnt : 0) + '</div><div class="l">重要通知</div></div>';
+    h += '<div class="statcard"><div class="n">' + S.categories.length + '</div><div class="l">分类数</div></div>';
+    h += '</div>';
+
+    function barList(rows, labelFn, colorFn) {
+      var max = Math.max.apply(null, rows.map(function (r) { return r.cnt; }).concat([1]));
+      return '<div class="bars">' + rows.map(function (r) {
+        var pct = Math.round(r.cnt / max * 100);
+        return '<div class="bar"><span class="bt">' + esc(labelFn(r)) + '</span>' +
+          '<span class="btrack"><span class="bfill" style="width:' + pct + '%;background:' +
+          colorFn(r) + '"></span></span><span class="bv">' + r.cnt + '</span></div>';
+      }).join('') + '</div>';
+    }
+    h += '<div class="sechead">按来源</div>';
+    h += barList(res.by_source || [], function (r) { return SRC_LABEL[r.source] || r.source; },
+      function (r) { return SRC_COLOR[r.source] || 'var(--other)'; });
+    h += '<div class="sechead">按重要级别</div>';
+    h += barList(res.by_level || [], function (r) { return LV_LABEL[r.level] || r.level; },
+      function (r) { return LV_COLOR[r.level] || 'var(--normal)'; });
+    h += '<div class="sechead">按分类</div>';
+    h += barList(res.by_category || [], function (r) { return r.category; },
+      function (r) {
+        var c = S.categories.filter(function (x) { return x.name === r.category; })[0];
+        return c ? c.color : 'var(--mute)';
+      });
+    var months = res.by_month || [];
+    if (months.length) {
+      h += '<div class="sechead">按月份（近 ' + months.length + ' 个月）</div>';
+      var mx = Math.max.apply(null, months.map(function (m) { return m.cnt; }).concat([1]));
+      h += '<div class="colchart">' + months.map(function (m) {
+        var hh = Math.max(3, Math.round(m.cnt / mx * 118));
+        return '<div class="col" title="' + esc(m.ym) + '：' + m.cnt + ' 条">' +
+          '<div class="cl" style="color:var(--dim)">' + m.cnt + '</div>' +
+          '<div class="cb" style="height:' + hh + 'px"></div>' +
+          '<div class="cl">' + esc(m.ym.slice(2)) + '</div></div>';
+      }).join('') + '</div>';
+    }
+    h += '</div><div class="mfoot"><span class="spacer"></span>' +
+      '<button class="btn" data-act="close">关闭</button></div></div>';
+    mountModal(h);
+    document.querySelector('.mask .modal').addEventListener('click', function (e) {
+      if (e.target.closest('[data-act="close"]')) closeModal();
+    });
+  }).catch(function (err) { toast(err.message, 'err'); });
+}
+
+/* ======================= 更多菜单 ======================= */
+function openMenu() {
+  var h = '<div class="modal" style="max-width:400px"><div class="mhead"><h3>更多</h3>' +
+    '<button class="btn icon ghost" data-act="close">' + ic('close', 17) + '</button></div>' +
+    '<div class="mbody" style="display:grid;gap:9px">';
+  function mi(act, iconName, label, danger) {
+    return '<button class="btn' + (danger ? ' danger' : '') + '" data-act="' + act +
+      '" style="justify-content:flex-start;height:42px">' + ic(iconName, 16) + label + '</button>';
+  }
+  if (isAdmin()) {
+    h += mi('new', 'plus', '手动新增一条通知');
+    h += mi('cats', 'filter', '管理分类');
+  }
+  h += mi('stats', 'chart', '查看数据统计');
+  h += mi('csv', 'down', '导出当前筛选结果为 CSV');
+  h += mi('json', 'down', '导出当前筛选结果为 JSON');
+  h += mi('refresh', 'refresh', '刷新数据');
+  if (isAdmin()) {
+    h += mi('seed', 'db', '载入示例数据');
+    h += mi('cleardemo', 'trash', '清除示例数据', true);
+  }
+  /* 账号管理 / 修改我的密码 / 退出登录 已全部迁到「导航中心」顶栏，
+     这里不再重复（通知中心只管通知）。 */
+  h += '<div class="usepline" style="height:1px;background:var(--border);margin:5px 4px"></div>';
+  h += mi('backportal', 'left', '返回导航中心');
+  h += '</div></div>';
+  mountModal(h);
+  document.querySelector('.mask .modal').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'close') closeModal();
+    else if (act === 'new') { closeModal(); openEditor(null); }
+    else if (act === 'stats') { closeModal(); openStats(); }
+    else if (act === 'csv') { doExport('csv'); }
+    else if (act === 'json') { doExport('json'); }
+    else if (act === 'cats') { closeModal(); openCategories(); }
+    else if (act === 'seed') {
+      api('/api/seed-demo', { method: 'POST' }).then(function (r) {
+        closeModal(); toast('已载入 ' + r.created + ' 条示例数据', 'ok');
+        loadCategories(); loadNotices(); loadStats().then(renderSidebar);
+      }).catch(function (err) { toast(err.message, 'err'); });
+    } else if (act === 'cleardemo') {
+      if (!confirm('确定清除所有示例数据？（只删除 ext_id 以 demo- 开头的记录，你自己导入的不受影响）')) return;
+      api('/api/clear', { method: 'POST', body: { scope: 'demo' } }).then(function (r) {
+        closeModal(); toast('已清除 ' + r.deleted + ' 条示例数据', 'ok');
+        loadCategories(); loadNotices(); loadStats().then(renderSidebar);
+      }).catch(function (err) { toast(err.message, 'err'); });
+    } else if (act === 'refresh') {
+      closeModal(); loadCategories(); loadNotices(); loadStats().then(renderSidebar);
+      toast('已刷新', 'ok');
+    } else if (act === 'backportal') {
+      closeModal(); go('portal');
+    }
+  });
+}
+
+/* ======================= 分类管理 ======================= */
+function openCategories() {
+  function body() {
+    return S.categories.map(function (c) {
+      return '<div class="fi"><span class="dot" style="background:' + c.color +
+        ';width:9px;height:9px;border-radius:3px"></span>' +
+        '<span style="flex:1">' + esc(c.name) + '</span>' +
+        '<span style="color:var(--mute);font-size:12px">' + c.cnt + ' 条</span>' +
+        (c.name === '未分类' ? '' : '<button class="btn icon ghost" data-del="' + esc(c.name) + '">' +
+          ic('trash', 14) + '</button>') + '</div>';
+    }).join('');
+  }
+  var h = '<div class="modal"><div class="mhead"><h3>管理分类</h3>' +
+    '<button class="btn icon ghost" data-act="close">' + ic('close', 17) + '</button></div><div class="mbody">';
+  h += '<div class="filelist" id="catList">' + body() + '</div>';
+  h += '<div class="grid2" style="margin-top:16px;align-items:end">' +
+    '<div class="field" style="margin:0"><label>新增分类</label>' +
+    '<input id="newCat" placeholder="如：客户通知"></div>' +
+    '<div class="field" style="margin:0"><label>颜色</label>' +
+    '<input type="color" id="newCatColor" value="#3b82f6" style="height:40px;padding:3px"></div></div>';
+  h += '<div class="hint">删除分类时，该分类下的通知会自动归到「未分类」，不会丢失。</div>';
+  h += '</div><div class="mfoot"><span class="spacer"></span><button class="btn" data-act="close">关闭</button>' +
+    '<button class="btn primary" data-act="addcat">' + ic('plus', 15) + '新增</button></div></div>';
+  mountModal(h);
+  var modal = document.querySelector('.mask .modal');
+  modal.addEventListener('click', function (e) {
+    var del = e.target.closest('[data-del]');
+    if (del) {
+      var name = del.getAttribute('data-del');
+      if (!confirm('删除分类「' + name + '」？该分类下的通知会归到「未分类」')) return;
+      api('/api/categories?name=' + encodeURIComponent(name), { method: 'DELETE' }).then(function (res) {
+        S.categories = res.items;
+        document.getElementById('catList').innerHTML = body();
+        renderSidebar(); toast('已删除分类', 'ok');
+      }).catch(function (err) { toast(err.message, 'err'); });
+      return;
+    }
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'close') closeModal();
+    else if (act === 'addcat') {
+      var name = document.getElementById('newCat').value.trim();
+      if (!name) return toast('请输入分类名', 'err');
+      api('/api/categories', {
+        method: 'POST',
+        body: { name: name, color: document.getElementById('newCatColor').value }
+      }).then(function (res) {
+        S.categories = res.items;
+        document.getElementById('catList').innerHTML = body();
+        document.getElementById('newCat').value = '';
+        renderSidebar(); toast('已新增分类', 'ok');
+      }).catch(function (err) { toast(err.message, 'err'); });
+    }
+  });
+}
+
+/* ======================= 顶栏事件 ======================= */
+var searchTimer = null;
+
+document.getElementById('q').addEventListener('input', function (e) {
+  clearTimeout(searchTimer);
+  var v = e.target.value;
+  searchTimer = setTimeout(function () {
+    S.q = v.trim(); S.page = 1; loadNotices();
+  }, 260);
+});
+
+document.getElementById('btnClearQ').addEventListener('click', function () {
+  document.getElementById('q').value = ''; S.q = ''; S.page = 1; loadNotices();
+});
+
+document.getElementById('btnImport').addEventListener('click', openImport);
+
+document.getElementById('btnStats').addEventListener('click', openStats);
+
+document.getElementById('btnMenu').addEventListener('click', openMenu);
+
+document.getElementById('btnTheme').addEventListener('click', function () {
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+});
+
+document.getElementById('btnExport').addEventListener('click', function (e) {
+  e.stopPropagation();
+  doExport('csv');
+});
+
+document.getElementById('sortSel').addEventListener('change', function (e) {
+  S.sort = e.target.value; S.page = 1; loadNotices();
+});
+
+document.getElementById('sizeSel').addEventListener('change', function (e) {
+  S.size = parseInt(e.target.value, 10); S.page = 1; loadNotices();
+});
+
+function setView(v) {
+  S.view = v; localStorage.setItem(LS_VIEW, v);
+  document.getElementById('viewCard').classList.toggle('on', v === 'card');
+  document.getElementById('viewTable').classList.toggle('on', v === 'table');
+  renderList();
+}
+
+document.getElementById('viewCard').addEventListener('click', function () { setView('card'); });
+
+document.getElementById('viewTable').addEventListener('click', function () { setView('table'); });
+
+document.getElementById('btnBackPortal').addEventListener('click', function () { go('portal'); });
+
+var drawerOpen = false;
+
+function toggleDrawer(open) {
+  drawerOpen = open;
+  document.getElementById('sidebar').classList.toggle('open', open);
+  var sc = document.getElementById('scrim');
+  if (open) {
+    sc.className = 'scrim';
+    sc.onclick = function () { toggleDrawer(false); };
+  } else { sc.className = ''; sc.onclick = null; }
+}
+
+document.getElementById('btnDrawer').addEventListener('click', function () { toggleDrawer(!drawerOpen); });
+
+document.getElementById('sidebar').addEventListener('click', function (e) {
+  if (window.innerWidth <= 980 && e.target.closest('.fitem')) toggleDrawer(false);
+});
+
+/* ======================= 启动（通知中心） ======================= */
+function boot() {
+  initTheme();
+  document.getElementById('noticeBrandMark').innerHTML = ic('shield', 17);
+  document.getElementById('siSearch').innerHTML = ic('search', 17);
+  document.getElementById('icImport').innerHTML = ic('upload', 16);
+  document.getElementById('icDown').innerHTML = ic('down', 16);
+  document.getElementById('btnDrawer').innerHTML = ic('filter', 17);
+  document.getElementById('btnStats').innerHTML = ic('chart', 17);
+  document.getElementById('btnMenu').innerHTML = ic('menu', 17);
+  document.getElementById('btnClearQ').innerHTML = ic('close', 15);
+  setView(localStorage.getItem(NH.LS_VIEW) || 'card');
+  try {
+    var su = localStorage.getItem(NH.LS_USER) || '';
+    if (su) document.getElementById('loginUser').value = su;
+  } catch (e) {}
+
+  var lh = readLoginHash();
+  api('/api/session').then(function (res) {
+    S.me = res.user;
+    renderMe();
+    enter();
+  }).catch(function () {
+    S.me = null;
+    if (lh.error) S.loginMsg = lh.error;
+    showLogin(S.loginMsg || '');
+    S.loginMsg = '';
+  });
+}
+
+/* 登录通过后进入通知列表 */
+function enter() {
+  document.getElementById('loginScreen').hidden = true;
+  document.getElementById('app').hidden = false;
+  renderMe();
+  loadStats().catch(function () {}).then(function () {
+    renderSidebar();
+    return loadCategories();
+  }).then(loadNotices);
+}
+
+/* 通知中心顶栏只有一个管理员入口要控制 */
+NH.hooks.paintChrome = function () {
+  var imp = document.getElementById('btnImport');
+  if (imp) imp.hidden = !isAdmin();
+};
+boot();
+
+})();
+</script>
+</body>
+</html>

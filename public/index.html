@@ -1,0 +1,1765 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>太平洋电信导航中心</title>
+<link rel="stylesheet" href="/common.css">
+</head>
+<body>
+<div id="portalView">
+  <header class="topbar">
+    <div class="brand"><span class="mark" id="brandMark"></span><span>太平洋电信导航中心</span></div>
+    <div class="searchwrap">
+      <span class="si" id="siSearch"></span>
+      <input type="search" id="navQ" placeholder="搜索系统名称、描述、标签…">
+      <span class="kbd">/</span>
+      <button type="button" class="clr" id="navQClear" title="清空"></button>
+    </div>
+    <div class="topright">
+      <button class="btn" id="navRefresh"><span id="icRefresh"></span><span class="hmob">重新探测</span></button>
+      <button class="btn" id="navAccount" hidden title="新增账号、改角色、停用、重置密码"><span id="icAccount"></span><span class="hmob">账号管理</span></button>
+      <button class="btn" id="navManage" hidden title="新增/编辑导航项与分组"><span id="icNavManage"></span><span class="hmob">管理导航</span></button>
+      <button type="button" class="userchip" id="navUserChip" title="账号"></button>
+      <div class="ucomenu" id="navUserMenu" role="menu"></div>
+      <button class="btn icon" id="navTheme" title="切换主题"></button>
+    </div>
+  </header>
+  <div class="banner" id="navPwdBanner" hidden></div>
+  <div class="pshell">
+    <aside class="pside" id="navSide" aria-label="分组标题">
+      <div class="shd">分组</div>
+    </aside>
+    <main class="pmain">
+      <div id="navRecent"></div>
+      <div id="navFlat"></div>
+      <div id="navGroups"><div class="navempty">正在加载…</div></div>
+    </main>
+  </div>
+</div>
+
+<!-- Ctrl+K 命令面板（键盘直达） -->
+<div id="cmdk" role="dialog" aria-modal="true" aria-label="快速打开">
+  <div class="cmdkbox">
+    <div class="cmdkin">
+      <input type="text" id="cmdkQ" placeholder="搜索系统名称、描述、标签、IP…" autocomplete="off" spellcheck="false">
+      <span class="kbd">ESC</span>
+    </div>
+    <div class="cmdklist" id="cmdkList"></div>
+    <div class="cmdkfoot">
+      <span><span class="kbd">↑</span><span class="kbd">↓</span> 选择</span>
+      <span><span class="kbd">Enter</span> 打开</span>
+      <span><span class="kbd">Esc</span> 关闭</span>
+      <span style="margin-left:auto" id="cmdkCnt"></span>
+    </div>
+  </div>
+</div>
+
+<!-- 通知中心（需登录） -->
+<div id="modalRoot"></div>
+<div class="toast" id="toastRoot"></div>
+<div id="scrim"></div>
+<script src="/common.js"></script>
+<script>
+(function () {
+'use strict';
+
+var NH = window.NH;
+var S = NH.S, api = NH.api, applyTheme = NH.applyTheme, armLoginFallback = NH.armLoginFallback, cleanSummary = NH.cleanSummary, closeModal = NH.closeModal, copyText = NH.copyText, esc = NH.esc, fallbackCopy = NH.fallbackCopy, fillPwdBanner = NH.fillPwdBanner, fmtDT = NH.fmtDT, getToken = NH.getToken, go = NH.go, hl = NH.hl, ic = NH.ic, initTheme = NH.initTheme, isAdmin = NH.isAdmin, isImageUrl = NH.isImageUrl, linkify = NH.linkify, loginRememberUser = NH.loginRememberUser, mountModal = NH.mountModal, openChangePwd = NH.openChangePwd, pad = NH.pad, parseDT = NH.parseDT, queryParams = NH.queryParams, readLoginHash = NH.readLoginHash, renderAttachList = NH.renderAttachList, renderMe = NH.renderMe, setToken = NH.setToken, showLogin = NH.showLogin, submitLoginByFetch = NH.submitLoginByFetch, svg = NH.svg, timeAgo = NH.timeAgo, toast = NH.toast, todayStr = NH.todayStr;
+
+/* 左侧导航页顶栏的身份 chip：登录后所有账号功能都从这里进 */
+function renderNavUser() {
+  var chip = document.getElementById('navUserChip');
+  if (!chip) return;
+  if (!S.me) {
+    chip.innerHTML = ic('user', 15) + '<span>登录</span>';
+    chip.title = '登录后可看到「需登录可见」的系统';
+    return;
+  }
+  chip.innerHTML = ic('user', 15) + '<span>' + esc(S.me.display_name || S.me.username) +
+    '</span><span class="rn' + (isAdmin() ? '' : ' viewer') + '">' + esc(S.me.role_label) +
+    '</span>' + ic('down', 12);
+  chip.title = '账号：' + S.me.username + '（' + S.me.role_label + '）';
+}
+
+/* ---- 门户顶栏的账号菜单 ---- */
+function navUserMenuItem(act, iconName, label, danger) {
+  return '<button type="button"' + (danger ? ' class="danger"' : '') +
+    ' data-navact="' + act + '" role="menuitem">' + ic(iconName, 15) + esc(label) + '</button>';
+}
+
+function closeNavUserMenu() {
+  var m = document.getElementById('navUserMenu');
+  if (m) m.classList.remove('on');
+}
+
+function openNavUserMenu() {
+  var m = document.getElementById('navUserMenu');
+  if (!m) return;
+  if (m.classList.contains('on')) return closeNavUserMenu();
+  var h = '';
+  if (S.me) {
+    h += '<div class="uhd">' + esc(S.me.username) + ' · ' + esc(S.me.role_label) + '</div>';
+    /* 只放「没有独立按钮」的操作：账号管理 / 管理导航 已在顶栏上，
+       不再重复出现在菜单里（同一功能两个入口容易让人以为坏了）。 */
+    h += navUserMenuItem('pwd', 'shield', '修改我的密码');
+    h += navUserMenuItem('winbox', 'link', 'Winbox 本地联动设置');
+    h += '<div class="usepline"></div>';
+    h += navUserMenuItem('logout', 'logout', '退出登录', true);
+  } else {
+    h += navUserMenuItem('login', 'user', '登录');
+  }
+  m.innerHTML = h;   /* 未登录分支保留兜底（正常点 chip 会直接跳登录页） */
+  m.classList.add('on');
+}
+
+document.getElementById('navUserChip').addEventListener('click', function (e) {
+  e.stopPropagation();
+  /* 未登录：一键直达登录页，不再多弹一层菜单 */
+  if (!S.me) return go('notices');
+  openNavUserMenu();
+});
+
+document.getElementById('navUserMenu').addEventListener('click', function (e) {
+  e.stopPropagation();
+  var b = e.target.closest('[data-navact]');
+  if (!b) return;
+  var act = b.getAttribute('data-navact');
+  closeNavUserMenu();
+  if (act === 'pwd') return openChangePwd();
+  if (act === 'winbox') return openWinboxHelp('');
+  if (act === 'login') return go('notices');
+  if (act === 'account') return isAdmin() ? openUsers() : toast('需要管理员权限', 'err');
+  if (act === 'manage') return isAdmin() ? openNavManage() : toast('需要管理员权限', 'err');
+  if (act === 'logout') {
+    if (!confirm('确定退出登录？')) return;
+    setToken('');
+    S.me = null;
+    S.noticeLoaded = false;
+    var done = function () { location.replace(location.pathname); };
+    api('/api/logout', { method: 'POST' }).then(done).catch(done);
+  }
+});
+
+/* ======================= 账号管理（仅管理员） ======================= */
+var US = { q: '', status: 'all', role: 'all', data: null, reset: null, created: null };
+
+/* 本地生成口令用的随机数：优先 crypto，退化到 Math.random（仅用于生成口令，不用于密钥） */
+function rndInt(n) {
+  var b = new Uint32Array(1);
+  if (window.crypto && crypto.getRandomValues) { crypto.getRandomValues(b); return b[0] % n; }
+  return Math.floor(Math.random() * n);
+}
+
+/* 生成 14 位强密码：四类字符各至少一个；剔除 0/O、1/l/I 等易混字符，方便转达 */
+function genPassword(len) {
+  var A = 'abcdefghijkmnpqrstuvwxyz', B = 'ABCDEFGHJKLMNPQRSTUVWXYZ',
+      D = '23456789', S = '!@#$%^&*-_=+', all = A + B + D + S;
+  var n = Math.max(12, len || 14);
+  var a = [A.charAt(rndInt(A.length)), B.charAt(rndInt(B.length)),
+           D.charAt(rndInt(D.length)), S.charAt(rndInt(S.length))];
+  while (a.length < n) a.push(all.charAt(rndInt(all.length)));
+  for (var i = a.length - 1; i > 0; i--) {          // Fisher-Yates 打乱，避免前四位固定字符种类
+    var j = rndInt(i + 1), t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a.join('');
+}
+
+function openUsers() {
+  US.q = ''; US.status = 'all'; US.role = 'all';
+  US.reset = null; US.created = null;
+  var h = '<div class="modal wide"><div class="mhead"><h3>账号管理</h3>' +
+    '<button class="btn icon ghost" data-act="close">' + ic('close', 17) + '</button></div>' +
+    '<div class="mbody" id="usersBody">加载中…</div>' +
+    '<div class="mfoot"><span class="spacer"></span>' +
+    '<button class="btn" data-act="close">关闭</button></div></div>';
+  mountModal(h);
+  var mask = document.getElementById('maskBg');
+  var me = null;
+
+  function items() { return (US.data && US.data.items) || []; }
+  function roles() { return (US.data && US.data.roles) || []; }
+
+  function visible() {
+    var q = US.q.trim().toLowerCase();
+    return items().filter(function (u) {
+      if (US.status === 'on' && !u.enabled) return false;
+      if (US.status === 'off' && u.enabled) return false;
+      if (US.role !== 'all' && u.role !== US.role) return false;
+      if (!q) return true;
+      return (u.username + ' ' + (u.display_name || '') + ' ' + (u.created_by || ''))
+        .toLowerCase().indexOf(q) >= 0;
+    });
+  }
+
+  function statsHtml() {
+    var all = items();
+    var admins = all.filter(function (u) { return u.role === 'admin'; }).length;
+    var off = all.filter(function (u) { return !u.enabled; }).length;
+    var weak = all.filter(function (u) { return u.weak_pwd; }).length;
+    return '<div class="ustats">' +
+      '<span><b>' + all.length + '</b> 个账号</span>' +
+      '<span><b>' + admins + '</b> 个管理员</span>' +
+      '<span><b>' + (all.length - off) + '</b> 个启用</span>' +
+      (off ? '<span class="warn"><b>' + off + '</b> 个已停用</span>' : '') +
+      (weak ? '<span class="warn">' + ic('warn', 12) + ' <b>' + weak +
+              '</b> 个弱密码待改</span>' : '') +
+      '</div>';
+  }
+
+  function rowHtml(u) {
+    var mine = me && u.id === me.id;
+    return '<tr class="' + (u.enabled ? '' : 'uoff') + '">' +
+      '<td><span class="uname">' + esc(u.username) + '</span>' +
+        (mine ? '<span class="ubadge">我</span>' : '') +
+        (u.weak_pwd ? '<span class="ubadge weak" title="该账号密码较弱，建议让本人改掉">弱密码</span>'
+                    : '') +
+      '</td>' +
+      '<td><input class="udn" data-uid="' + u.id + '" data-field="display_name" value="' +
+        esc(u.display_name || '') + '" placeholder="填姓名/备注"></td>' +
+      '<td><select data-uid="' + u.id + '" data-field="role"' +
+        (mine ? ' disabled title="不能修改自己的角色"' : '') + '>' +
+        roles().map(function (r) {
+          return '<option value="' + r.value + '"' + (u.role === r.value ? ' selected' : '') +
+            '>' + esc(r.label) + '</option>';
+        }).join('') + '</select></td>' +
+      '<td>' + (u.enabled
+        ? '<span style="color:var(--wecom);font-size:12.5px">启用</span>'
+        : '<span class="off">已停用</span>') + '</td>' +
+      '<td class="off" style="white-space:nowrap">' + esc(u.last_login || '从未登录') +
+        (u.created_by ? '<div style="font-size:11px;opacity:.8">由 ' + esc(u.created_by) +
+          ' 创建</div>' : '') + '</td>' +
+      '<td style="white-space:nowrap">' +
+        '<button class="mini" data-reset="' + u.id + '" data-name="' + esc(u.username) +
+          '">重置密码</button> ' +
+        '<button class="mini" data-toggle="' + u.id + '" data-on="' + (u.enabled ? 1 : 0) + '"' +
+          (mine ? ' disabled' : '') + '>' + (u.enabled ? '停用' : '启用') + '</button> ' +
+        '<button class="mini danger" data-del="' + u.id + '" data-name="' + esc(u.username) + '"' +
+          (mine ? ' disabled' : '') + '>删除</button>' +
+      '</td></tr>';
+  }
+
+  function shellHtml() {
+    return '<div id="uStats"></div>' +
+      '<div class="notice" style="margin-bottom:14px">' + ic('shield', 15) +
+        '<div><b>管理员</b>：可增删改通知、导入、管理分类与账号。<b>查看</b>：只能浏览、搜索、导出；' +
+        '所有写操作由服务端拒绝（不只是前端藏按钮）。</div></div>' +
+      '<div id="uCreatedBox"></div>' +
+      '<div id="uResetBox"></div>' +
+      '<div class="utools">' +
+        '<input class="uf" id="uQ" placeholder="搜索账号 / 姓名 / 创建人" autocomplete="off">' +
+        '<select id="uStatus">' +
+          '<option value="all">全部状态</option><option value="on">仅启用</option>' +
+          '<option value="off">仅停用</option></select>' +
+        '<select id="uRoleF">' +
+          '<option value="all">全部角色</option><option value="admin">管理员</option>' +
+          '<option value="viewer">查看</option></select>' +
+        '<span class="ucnt" id="uCnt"></span>' +
+      '</div>' +
+      '<table class="utable"><thead><tr>' +
+        '<th>账号</th><th style="width:150px">姓名 / 备注</th><th style="width:106px">角色</th>' +
+        '<th style="width:64px">状态</th><th style="width:142px">最近登录</th>' +
+        '<th style="width:224px">操作</th></tr></thead>' +
+      '<tbody id="uRows"></tbody></table>' +
+      '<div class="sechead" style="margin:22px 0 10px">新增账号</div>' +
+      '<div class="grid3">' +
+        '<div class="field"><label>账号</label><input id="nuName" placeholder="2-32 位字母数字"></div>' +
+        '<div class="field"><label>密码</label><div class="pwrow">' +
+          '<input id="nuPass" placeholder="至少 6 位">' +
+          '<button class="mini" type="button" data-gen="nuPass">生成</button>' +
+          '<button class="mini" type="button" data-cp="nuPass">复制</button></div></div>' +
+        '<div class="field"><label>角色</label><select id="nuRole">' +
+          '<option value="viewer">查看（只读）</option>' +
+          '<option value="admin">管理员</option></select></div>' +
+      '</div>' +
+      '<div class="field"><label>姓名 / 备注（可选）</label>' +
+        '<input id="nuDisplay" placeholder="如：张伟 · 网络组"></div>' +
+      '<button class="btn primary" data-act="adduser">' + ic('plus', 15) + '创建账号</button>';
+  }
+
+  function paint() {
+    document.getElementById('uStats').innerHTML = statsHtml();
+    var list = visible();
+    document.getElementById('uRows').innerHTML = list.length
+      ? list.map(rowHtml).join('')
+      : '<tr><td colspan="6"><div class="uempty">没有匹配的账号</div></td></tr>';
+    document.getElementById('uCnt').textContent =
+      list.length === items().length ? '' : ('筛出 ' + list.length + ' / ' + items().length);
+  }
+
+  function resetBoxHtml() {
+    if (!US.reset) return '';
+    return '<div class="ubox"><h4>' + ic('refresh', 13) + '重置「' + esc(US.reset.name) +
+      '」的密码</h4>' +
+      '<div class="field" style="margin:0"><label>新密码</label><div class="pwrow">' +
+        '<input id="urPass" value="' + esc(US.reset.pwd || '') + '" placeholder="至少 6 位">' +
+        '<button class="mini" type="button" data-gen="urPass">生成</button>' +
+        '<button class="mini" type="button" data-cp="urPass">复制</button></div></div>' +
+      '<div class="acts"><button class="btn primary" data-doreset="' + US.reset.id + '">' +
+        ic('check', 15) + '确定重置</button>' +
+      '<button class="btn" data-cancelreset="1">取消</button></div></div>';
+  }
+
+  function createdText(c) {
+    return '通知中心访问地址：' + location.origin + '\n账号：' + c.username +
+      '\n密码：' + c.password + '\n角色：' + c.roleLabel +
+      (c.display_name ? '\n姓名：' + c.display_name : '');
+  }
+
+  function createdBoxHtml() {
+    if (!US.created) return '';
+    var c = US.created;
+    return '<div class="ubox hot"><h4>' + ic('check', 13) + '账号已创建，把下面信息发给同事</h4>' +
+      '<div class="kv"><span class="k">地址</span><span class="v">' + esc(location.origin) +
+        '</span></div>' +
+      '<div class="kv"><span class="k">账号</span><span class="v">' + esc(c.username) + '</span></div>' +
+      '<div class="kv"><span class="k">密码</span><span class="v">' + esc(c.password) + '</span></div>' +
+      '<div class="kv"><span class="k">角色</span><span class="v">' + esc(c.roleLabel) + '</span></div>' +
+      '<div class="acts"><button class="btn primary" data-cpcreated="1">' + ic('copy', 15) +
+        '复制账号信息</button>' +
+      '<button class="btn" data-cancelcreated="1">知道了</button>' +
+      '<span style="font-size:11.5px;color:var(--mute);align-self:center">' +
+      '密码只显示这一次，关掉后看不到（忘了就重置）</span></div></div>';
+  }
+
+  function paintBoxes() {
+    document.getElementById('uResetBox').innerHTML = resetBoxHtml();
+    document.getElementById('uCreatedBox').innerHTML = createdBoxHtml();
+  }
+
+  function bindTools() {
+    var q = document.getElementById('uQ');
+    if (q) q.addEventListener('input', function () { US.q = this.value; paint(); });
+    var st = document.getElementById('uStatus');
+    if (st) st.addEventListener('change', function () { US.status = this.value; paint(); });
+    var rf = document.getElementById('uRoleF');
+    if (rf) rf.addEventListener('change', function () { US.role = this.value; paint(); });
+  }
+
+  function refresh() {
+    return api('/api/users').then(function (d) {
+      US.data = d;
+      me = d.me || S.me;
+      if (!document.getElementById('uRows')) {      // 首次：搭骨架（之后只重绘行，避免输入框失焦）
+        document.getElementById('usersBody').innerHTML = shellHtml();
+        bindTools();
+      }
+      paint();
+      paintBoxes();
+    }).catch(function (err) {
+      toast(err.message, 'err');
+      closeModal();
+    });
+  }
+
+  /* 就地编辑：角色下拉 / 姓名输入框，change 即保存 */
+  mask.addEventListener('change', function (e) {
+    var el = e.target.closest('[data-field]');
+    if (!el) return;
+    var uid = el.getAttribute('data-uid'), field = el.getAttribute('data-field');
+    if (field === 'role') {
+      el.disabled = true;
+      api('/api/users/' + uid, { method: 'PUT', body: { role: el.value } })
+        .then(function () {
+          toast('角色已更新', 'ok');
+          refresh();
+          api('/api/session').then(function (r) { S.me = r.user; renderMe(); }).catch(function () {});
+        }).catch(function (err) { toast(err.message, 'err'); refresh(); });
+      return;
+    }
+    if (field === 'display_name') {
+      var cur = items().filter(function (u) { return String(u.id) === String(uid); })[0];
+      if (cur && (cur.display_name || '') === el.value) return;
+      api('/api/users/' + uid, { method: 'PUT', body: { display_name: el.value } })
+        .then(function () { toast('已保存姓名备注', 'ok'); refresh(); })
+        .catch(function (err) { toast(err.message, 'err'); refresh(); });
+    }
+  });
+
+  mask.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-act],[data-reset],[data-toggle],[data-del],[data-gen],' +
+      '[data-cp],[data-doreset],[data-cancelreset],[data-cpcreated],[data-cancelcreated]');
+    if (!el) return;
+
+    if (el.getAttribute('data-act') === 'close') return closeModal();
+
+    var gen = el.getAttribute('data-gen');            // 生成强密码
+    if (gen) {
+      var gi = document.getElementById(gen);
+      if (gi) { gi.value = genPassword(14); gi.focus(); }
+      return;
+    }
+    var cp = el.getAttribute('data-cp');              // 复制输入框内容
+    if (cp) {
+      var ci = document.getElementById(cp);
+      if (ci && ci.value) copyText(ci.value); else toast('还没有内容可复制', 'err');
+      return;
+    }
+    if (el.getAttribute('data-cpcreated')) {
+      if (US.created) copyText(createdText(US.created));
+      return;
+    }
+    if (el.getAttribute('data-cancelcreated')) { US.created = null; paintBoxes(); return; }
+    if (el.getAttribute('data-cancelreset')) { US.reset = null; paintBoxes(); return; }
+
+    var resetId = el.getAttribute('data-reset');
+    if (resetId) {                                    // 打开重置面板（默认已生成一个强密码）
+      US.reset = { id: resetId, name: el.getAttribute('data-name'), pwd: genPassword(14) };
+      paintBoxes();
+      var rp = document.getElementById('urPass');
+      if (rp) { rp.focus(); rp.select(); }
+      return;
+    }
+    var doReset = el.getAttribute('data-doreset');
+    if (doReset) {
+      var np = document.getElementById('urPass').value || '';
+      if (np.length < 6) return toast('密码至少 6 位', 'err');
+      api('/api/users/' + doReset, { method: 'PUT', body: { password: np } })
+        .then(function () { toast('已重置密码', 'ok'); US.reset = null; refresh(); })
+        .catch(function (err) { toast(err.message, 'err'); });
+      return;
+    }
+
+    var toggleId = el.getAttribute('data-toggle');
+    if (toggleId) {
+      var on = el.getAttribute('data-on') === '1' ? 0 : 1;
+      api('/api/users/' + toggleId, { method: 'PUT', body: { enabled: on } })
+        .then(function () {
+          toast(on ? '账号已启用' : '账号已停用', 'ok');
+          refresh();
+        }).catch(function (err) { toast(err.message, 'err'); });
+      return;
+    }
+
+    var delId = el.getAttribute('data-del');
+    if (delId) {
+      var dnm = el.getAttribute('data-name');
+      if (!confirm('确定删除账号「' + dnm + '」？\n\n该账号将立即无法登录，但已归档的通知不受影响。')) return;
+      api('/api/users/' + delId, { method: 'DELETE' })
+        .then(function () { toast('已删除账号「' + dnm + '」', 'ok'); refresh(); })
+        .catch(function (err) { toast(err.message, 'err'); });
+      return;
+    }
+
+    if (el.getAttribute('data-act') === 'adduser') {
+      var name = (document.getElementById('nuName').value || '').trim();
+      var pass = document.getElementById('nuPass').value || '';
+      var role = document.getElementById('nuRole').value;
+      var disp = document.getElementById('nuDisplay').value || '';
+      if (!name) return toast('请输入账号', 'err');
+      if (pass.length < 6) return toast('密码至少 6 位', 'err');
+      el.disabled = true;
+      api('/api/users', {
+        method: 'POST',
+        body: { username: name, password: pass, role: role, display_name: disp }
+      }).then(function () {
+        var rl = (roles().filter(function (r) { return r.value === role; })[0] || {}).label || role;
+        US.created = { username: name, password: pass, roleLabel: rl, display_name: disp };
+        US.reset = null;
+        ['nuName', 'nuPass', 'nuDisplay'].forEach(function (id) {
+          var x = document.getElementById(id); if (x) x.value = '';
+        });
+        var btn = document.querySelector('[data-act="adduser"]');
+        if (btn) btn.disabled = false;
+        return refresh().then(function () {
+          toast('已创建账号「' + name + '」', 'ok');
+          var nb = document.getElementById('uCreatedBox');
+          if (nb) nb.scrollIntoView({ block: 'nearest' });
+        });
+      }).catch(function (err) {
+        toast(err.message, 'err');
+        el.disabled = false;
+      });
+    }
+  });
+
+  refresh();
+}
+
+function loadNav() {
+  return api('/api/nav').then(function (res) {
+    S.nav = res;
+    renderPortal();
+  }).catch(function (err) {
+    document.getElementById('navGroups').innerHTML =
+      '<div class="navempty">' + ic('warn', 28) + '<b>导航加载失败</b>' + esc(err.message) + '</div>';
+  });
+}
+
+/* 同源地址 → 站内路由（同标签页切换），站外地址 → 新标签打开。
+   这样「重要通知中心」卡片能直接进通知中心，而不是打开站点根路径又回到导航页。 */
+function internalRoute(u) {
+  try {
+    var url = new URL(u, location.href);
+    if (url.origin !== location.origin) return '';
+    var h = (url.hash || '').replace(/^#\/?/, '');
+    if (h.indexOf('notices') === 0) return '/notices';
+    if (url.pathname === '/notices' || url.pathname === '/notices.html') return '/notices';
+    if (url.pathname === '/' || url.pathname === '/index.html') return '/';
+    return '';
+  } catch (e) { return ''; }
+}
+
+function navInitial(name, icon) {
+  if (icon) return esc(icon);
+  var s = String(name || '?').trim();
+  return esc(s.slice(0, 1).toUpperCase());
+}
+
+/* ============ 门户本地状态：选中的「大标题」/ 客户选择 ============ */
+var LS_NAVOPEN = 'nh_navopen', LS_NAVSUB = 'nh_navsub', LS_NAVSEL = 'nh_navsel';
+
+function lsGet(k, dflt) {
+  try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : dflt; }
+  catch (e) { return dflt; }
+}
+
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+/* 当前选中的「大标题」：分组 id 的字符串，或 'fav'（常用）。 */
+function navSelGroup() {
+  var v = lsGet(LS_NAVSEL, null);
+  return v === null ? '' : String(v);
+}
+
+function setNavSelGroup(v) { lsSet(LS_NAVSEL, String(v)); }
+
+function navSubSel(gid) {
+  var m = lsGet(LS_NAVSUB, null) || {};
+  return m[String(gid)] || '';
+}
+
+function setNavSubSel(gid, sub) {
+  var m = lsGet(LS_NAVSUB, null) || {};
+  if (sub) m[String(gid)] = sub; else delete m[String(gid)];
+  lsSet(LS_NAVSUB, m);
+}
+
+/* ============ 打开方式 ============
+   launch: web（默认，浏览器新标签）| winbox（Winbox 4.x 本地应用）| custom */
+function hostOf(u) {
+  try { return new URL(u, location.href).host; } catch (e) { return ''; }
+}
+
+function navOpenTarget(it) {
+  var lm = (it.launch || 'web').toLowerCase();
+  if (lm === 'winbox') {
+    var host = String(it.launch_host || '').trim() || hostOf(it.url);
+    /* 用我们自己的 nh:// 协议，而不是 winbox://。
+       Windows 上 Winbox 默认**不注册任何 URL 协议**，所以 winbox://host
+       点了浏览器毫无反应（这正是「没有调用本地应用」的原因）。
+       nh:// 由本机安装的处理程序接管，它校验地址后再调用 winbox.exe。 */
+    return host ? ('nh://winbox?host=' + encodeURIComponent(host)) : (it.url || '#');
+  }
+  if (lm === 'custom' && it.launch_arg) return it.launch_arg;
+  return it.url || '#';
+}
+
+function navIsApp(it) {
+  var lm = (it.launch || 'web').toLowerCase();
+  return lm === 'winbox' || lm === 'custom';
+}
+
+function navSearchText(it) {
+  /* 载入导航数据时把 435 条的检索串一次性算好（见 renderPortal），
+     否则每敲一个字符都要重拼 4 万多字符的字符串。 */
+  if (it._s !== undefined) return it._s;
+  return (it.name + ' ' + (it.description || '') + ' ' + (it.tags || []).join(' ') +
+    ' ' + (it.url || '') + ' ' + (it.subgroup || '') + ' ' +
+    (it.launch_host || '') + ' ' + (it.group_name || '')).toLowerCase();
+}
+
+/* 排序：常用 → 访问频次高的 → 名称。让「常去的」自动浮上来 */
+function navRank(a, b) {
+  if (!!b.favorite !== !!a.favorite) return b.favorite ? 1 : -1;
+  var va = a.visit_count || 0, vb = b.visit_count || 0;
+  if (vb !== va) return vb - va;
+  return String(a.name || '').localeCompare(String(b.name || ''));
+}
+
+function navCardHtml(it) {
+  var st = it.status || {};
+  var cls = st.ok === true ? 'ok' : (st.ok === false ? 'bad' : 'unk');
+  var tip = st.ok === true ? ('在线 · ' + (st.ms || 0) + 'ms')
+    : (st.ok === false ? ('探测失败：' + (st.reason || '无法连接')) : '未探测');
+  var search = navSearchText(it);
+  var lm = (it.launch || 'web').toLowerCase();
+  /* 本地应用项（Winbox 等）绝不能走站内路由：它的 url 可能是空的，
+     而 new URL('') 会解析成当前页，被 internalRoute 误判成门户自身。 */
+  var isApp = navIsApp(it);
+  var isWinbox = (it.launch || 'web').toLowerCase() === 'winbox';
+  var route = isApp ? '' : internalRoute(it.url);
+  /* Winbox 卡片 href 用 #：正常点击由 JS 接管（复制地址 + 引导），
+     这样 Ctrl+点击 / 中键也不会再开一个空白 nh:// 标签页。
+     装了联动的用户，走弹窗里的「尝试直接启动」按钮。 */
+  var href = isWinbox ? '#' : (route || navOpenTarget(it));
+  /* 本地应用（nh:// / winbox:// 这类自定义协议）必须**当前标签页直接导航**。
+     加了 target="_blank" 时 Chrome/Edge 会认为新标签里的跳转不是用户手势，
+     直接把外部协议调用拦掉，只留下一个空白页 —— 表现就是「点了没反应」。
+     站内页面同标签页；只有真正的站外 http(s) 才新开标签。 */
+  var linkAttrs = (route || isApp) ? '' : 'target="_blank" rel="noopener noreferrer"';
+  var lmLbl = lm === 'winbox' ? 'WINBOX' : (lm === 'custom' ? 'APP' : '');
+  var openTip = lm === 'winbox'
+    ? ('点一下复制设备地址，再粘到 Winbox 的 Connect To 框')
+    : (it.url || '');
+  return '<a class="navcard' + (it.favorite ? ' is-fav' : '') + '" href="' + esc(href) + '" ' +
+    linkAttrs + ' ' +
+    'data-id="' + it.id + '" data-search="' + esc(search) + '" ' +
+    'data-sub="' + esc((it.subgroup || '').trim()) + '" ' +
+    'data-fav="' + (it.favorite ? '1' : '0') + '" ' +
+    (lm === 'winbox'
+      ? 'data-winbox="1" data-name="' + esc(it.name) + '" data-host="' +
+        esc(String(it.launch_host || '').trim() || hostOf(it.url)) + '" '
+      : '') +
+    'title="' + esc(openTip) + '">' +
+    '<span class="navst ' + cls + '" title="' + esc(tip) + '"></span>' +
+    '<span class="navicon" style="background:' + esc(it.color || '#3b82f6') + '">' +
+      navInitial(it.name, it.icon) + '</span>' +
+    '<span class="navbody">' +
+      '<span class="nn">' + esc(it.name) + '</span>' +
+      (it.description ? '<span class="nd">' + esc(it.description) + '</span>' : '') +
+      ((it.tags && it.tags.length)
+        ? '<span class="ntags">' + it.tags.slice(0, 4).map(function (t) {
+            return '<span class="ntag">' + esc(t) + '</span>';
+          }).join('') + '</span>'
+        : '') +
+    '</span>' +
+    (lmLbl ? '<span class="navlm">' + lmLbl + '</span>' : '') +
+    /* 用文字星号而不是内联 SVG：435 张卡就是 435 个 <svg>，
+       每次渲染都要解析一遍路径，是首屏卡顿的一大来源。 */
+    '<button type="button" class="navstar' + (it.favorite ? ' on' : '') +
+      '" data-star="' + it.id + '" title="' +
+      (it.favorite ? '取消常用' : '设为常用') + '">★</button>' +
+    '</a>';
+}
+
+/* 组内渲染：有 subgroup 的项渲染成「筛选 chip + 单个网格」。
+   原来是把每个子分组纵向堆成一叠、且默认全展开——89 项（迁移后 219 项 / 84 个客户）
+   会变成一大片，所以改成 chip 筛选，一次只显示一个客户。
+   注意：类名里保留 navsubs，卡片保留 data-hit —— 测试与外部脚本依赖这些标记。 */
+function groupBodyHtml(g) {
+  var items = g.items || [];
+  var order = [], map = {};
+  items.forEach(function (i) {
+    var sg = (i.subgroup || '').trim();
+    if (!sg) return;
+    if (map[sg] === undefined) { map[sg] = 0; order.push(sg); }
+    map[sg]++;
+  });
+  if (!order.length) {
+    return '<div class="navsubs"><div class="navgrid">' +
+      items.map(navCardHtml).join('') + '</div></div>';
+  }
+  /* 设备多的客户排前面，找起来快 */
+  order.sort(function (a, b) { return map[b] - map[a] || a.localeCompare(b); });
+  var sel = navSubSel(g.id);
+  var chips = '<button type="button" class="subchip' + (sel ? '' : ' on') +
+      '" data-subpick="" data-gid="' + g.id + '">全部<span class="sc">' +
+      items.length + '</span></button>' +
+    order.map(function (sg) {
+      return '<button type="button" class="subchip' + (sel === sg ? ' on' : '') +
+        '" data-subpick="' + esc(sg) + '" data-gid="' + g.id + '">' + esc(sg) +
+        '<span class="sc">' + map[sg] + '</span></button>';
+    }).join('');
+  /* 84 个客户时 chip 太多，给一条筛选框 */
+  var filter = order.length > 24
+    ? '<div class="subfwrap"><input class="subf" data-subfilter="' + g.id +
+      '" placeholder="筛选客户代码…" autocomplete="off">' +
+      '<span class="cnt" data-subcnt="' + g.id + '">' + order.length + ' 个客户</span></div>'
+    : '';
+  return '<div class="navsubs" data-gid="' + g.id + '">' + filter +
+    '<div class="subchips" data-chips="' + g.id + '">' + chips + '</div>' +
+    '<div class="navgrid" data-grid="' + g.id + '">' +
+      items.map(navCardHtml).join('') + '</div></div>';
+}
+
+/* ============ 左侧「大标题」栏 + 右侧内容区 ============ */
+function navSideItem(key, label, count, sel) {
+  return '<button type="button" class="psitem' + (String(sel) === String(key) ? ' on' : '') +
+    '" data-navsel="' + esc(key) + '" title="' + esc(label) + '">' +
+    '<span class="pn">' + esc(label) + '</span>' +
+    '<span class="pc">' + count + '</span></button>';
+}
+
+function renderNavSide() {
+  var nav = S.nav || {};
+  var groups = (nav.groups || []).filter(function (g) { return (g.items || []).length; });
+  var favs = (S.navAll || []).filter(function (i) { return i.favorite; });
+  var sel = navSelGroup();
+
+  /* 选中项失效时（首次进入、分组被删）回落到「常用」或第一个分组 */
+  var ok = (sel === 'fav' && favs.length) ||
+           groups.some(function (g) { return String(g.id) === sel; });
+  if (!ok) {
+    sel = favs.length ? 'fav' : (groups.length ? String(groups[0].id) : '');
+    setNavSelGroup(sel);
+  }
+
+  var h = '<div class="shd">分组</div>';
+  if (favs.length) h += navSideItem('fav', '★ 常用', favs.length, sel) + '<div class="sline"></div>';
+  h += groups.map(function (g) {
+    return navSideItem(String(g.id), g.name, g.items.length, sel);
+  }).join('');
+  document.getElementById('navSide').innerHTML = h;
+}
+
+/* 右侧只渲染当前选中的那一组：DOM 里最多只有一组的卡片 */
+function renderPane() {
+  var box = document.getElementById('navGroups');
+  if (!box) return;
+  var sel = navSelGroup();
+
+  if (sel === 'fav') {
+    var favs = (S.navAll || []).filter(function (i) { return i.favorite; });
+    box.innerHTML = '<div class="phead"><h1>常用</h1>' +
+      '<span class="pcount">' + favs.length + ' 个</span>' +
+      '<span style="font-size:12px;color:var(--mute);margin-left:auto">' +
+      '点卡片左下角的 ★ 增删</span></div>' +
+      (favs.length
+        ? '<div class="navgrid">' + favs.map(navCardHtml).join('') + '</div>'
+        : '<div class="navempty">' + ic('pin', 30) + '<b>还没有常用</b>' +
+          '在任意卡片左下角点 ★，它就会出现在这里</div>');
+    return;
+  }
+
+  var g = (S.navGroupsById || {})[sel];
+  if (!g) {
+    box.innerHTML = '<div class="navempty">' + ic('grid', 30) + '<b>还没有导航项</b>' +
+      '管理员可以在右上角「管理导航」里添加内网系统</div>';
+    return;
+  }
+  /* groupBodyHtml 已包含「客户 chip 行 + 单个网格」 */
+  box.innerHTML = '<div class="phead"><h1>' + esc(g.name) + '</h1>' +
+    '<span class="pcount">' + g.items.length + ' 项</span></div>' + groupBodyHtml(g);
+}
+
+function flatRowHtml(it) {
+  var isApp = navIsApp(it);
+  var isWinbox = (it.launch || 'web').toLowerCase() === 'winbox';
+  var route = isApp ? '' : internalRoute(it.url);
+  /* Winbox 卡片 href 用 #：正常点击由 JS 接管（复制地址 + 引导），
+     这样 Ctrl+点击 / 中键也不会再开一个空白 nh:// 标签页。
+     装了联动的用户，走弹窗里的「尝试直接启动」按钮。 */
+  var href = isWinbox ? '#' : (route || navOpenTarget(it));
+  /* 同上：本地应用不能新开标签，否则协议调用会被浏览器拦掉 */
+  var attrs = (route || isApp) ? '' : 'target="_blank" rel="noopener noreferrer"';
+  return '<a class="flatrow" href="' + esc(href) + '" ' + attrs +
+    ' data-id="' + it.id + '">' +
+    '<span class="fi" style="background:' + esc(it.color || '#3b82f6') + '">' +
+      navInitial(it.name, it.icon) + '</span>' +
+    '<span class="fn">' + esc(it.name) + '</span>' +
+    (it.subgroup ? '<span class="fg">' + esc(it.subgroup) + '</span>' : '') +
+    (it.group_name ? '<span class="fg">' + esc(it.group_name) + '</span>' : '') +
+    '<span class="fu">' + esc(hostOf(navOpenTarget(it)) || '') + '</span></a>';
+}
+
+/* 扁平结果：搜索时不再在各分组间就地高亮，直接给一张跨分组的清单 */
+function renderFlatList(q, el) {
+  var list = (S.navAll || []).filter(function (i) {
+    return navSearchText(i).indexOf(q) >= 0;
+  });
+  list.sort(navRank);
+  if (!list.length) {
+    el.innerHTML = '<div class="navsearch-empty">没有匹配「' + esc(S.navQ || q) + '」的系统</div>';
+    return [];
+  }
+  var cap = 60;
+  el.innerHTML = '<div class="flathd">找到 <b>' + list.length + '</b> 个系统' +
+    (list.length > cap ? '，显示前 ' + cap + ' 个，继续输入可缩小范围' : '') + '</div>' +
+    list.slice(0, cap).map(flatRowHtml).join('');
+  return list;
+}
+
+function renderPortal() {
+  var nav = S.nav;
+  if (!nav) return;
+
+  /* 展开成一张扁平索引：搜索、命令面板、常用区、cd拖拽都基于它。
+     顺便把检索串预计算好（_s），后续每次搜索按键就不必重拼 4 万多字符。 */
+  var all = [], byId = {};
+  (nav.groups || []).forEach(function (g) {
+    byId[g.id] = g;
+    (g.items || []).forEach(function (i) {
+      i.group_name = g.name;
+      i._s = navSearchText(i);
+      all.push(i);
+    });
+  });
+  S.navAll = all;
+  S.navGroupsById = byId;
+
+  var recent = nav.recent || [];
+  var h = '';
+  if (recent.length) {
+    h += '<div class="navrecent"><span class="lb">最近访问</span>' +
+      recent.map(function (it) {
+        var capp = navIsApp(it);
+        var croute = capp ? '' : internalRoute(it.url);
+        return '<a class="navchip" href="' + esc(croute || navOpenTarget(it)) + '" ' +
+          ((croute || capp) ? '' : 'target="_blank" rel="noopener noreferrer"') +
+          ' data-id="' + it.id + '">' +
+          '<span class="cd" style="background:' + esc(it.color || '#3b82f6') + '"></span>' +
+          esc(it.name) + '</a>';
+      }).join('') + '</div>';
+  }
+  h += '<div class="navsum">' +
+    '<span><span class="dot" style="background:var(--wecom)"></span>在线 ' + (nav.online || 0) + '</span>' +
+    '<span><span class="dot" style="background:var(--urgent)"></span>探测失败 ' + (nav.offline || 0) + '</span>' +
+    '<span><span class="dot" style="background:var(--mute)"></span>共 ' + (nav.total || 0) +
+      ' 个系统 · ' + (nav.groups || []).length + ' 个分组</span>' +
+    (nav.checked_at ? '<span>探测于 ' + esc(nav.checked_at) + '</span>' : '') +
+    '<span style="margin-left:auto">Ctrl+K 快速打开 · 点左侧标题切换</span></div>';
+  document.getElementById('navRecent').innerHTML = h;
+
+  renderNavSide();
+  renderPane();
+  applyNavFilter();
+}
+
+/* 只对指定范围内的网格应用「客户 chip」筛选 */
+function navPaintChips(scope) {
+  if (!scope || !scope.querySelector) return;
+  var grid = scope.querySelector('.navgrid[data-grid]') || scope.querySelector('.navgrid');
+  if (!grid) return;
+  var gid = grid.getAttribute('data-grid');
+  var sel = gid ? navSubSel(gid) : '';
+  Array.prototype.forEach.call(grid.querySelectorAll('.navcard'), function (c) {
+    var on = !sel || (c.getAttribute('data-sub') || '') === sel;
+    c.style.display = on ? '' : 'none';
+    c.setAttribute('data-hit', on ? '1' : '0');
+  });
+}
+
+/* 统一计算可见性：搜索 → 扁平清单；否则 → 当前分组 + 客户 chip 过滤 */
+function applyNavFilter() {
+  var q = (S.navQ || '').trim().toLowerCase();
+  var flat = document.getElementById('navFlat');
+  var pane = document.getElementById('navGroups');
+
+  if (q) {
+    if (flat) { renderFlatList(q, flat); flat.classList.add('on'); }
+    if (pane) pane.style.display = 'none';
+    return;
+  }
+  if (flat) { flat.classList.remove('on'); flat.innerHTML = ''; }
+  if (pane) {
+    pane.style.display = '';
+    navPaintChips(pane);
+  }
+}
+
+/* ---------------- Winbox：零安装主路径 ---------------- */
+/*
+ * 浏览器**无法**在「不安装任何东西」的前提下拉起本地程序，这是浏览器的安全边界
+ * （否则任意网站都能启动你电脑上的程序）。所以主路径做成零安装、立刻可用的：
+ *   点卡片 → 自动复制设备地址 → 在 Winbox 的 Connect To 框里粘贴 → 连接。
+ * 装了本地联动的用户，面板里还有一个「尝试直接启动」按钮走 nh://。
+ */
+function openWinboxLaunch(host, name) {
+  var h = '<div class="modal" style="max-width:520px"><div class="mhead">' +
+    '<h3>用 Winbox 打开' + (name ? '「' + esc(name) + '」' : '') + '</h3>' +
+    '<button class="btn icon ghost" data-act="close">' + ic('close', 17) + '</button></div>' +
+    '<div class="mbody">';
+  h += '<div class="field" style="margin:0"><label>设备地址（已复制到剪贴板）</label>' +
+    '<div style="display:flex;gap:8px">' +
+    '<input id="wbHost" value="' + esc(host) + '" readonly ' +
+    'style="flex:1;min-width:0;font-family:ui-monospace,Consolas,monospace;font-size:15px">' +
+    '<button class="btn primary" data-act="copyhost">' + ic('copy', 15) + '复制</button>' +
+    '</div></div>';
+  h += '<div style="font-size:13.5px;line-height:2.05;margin-top:14px">' +
+    '<b>1.</b> 打开 Winbox<br>' +
+    '<b>2.</b> 把地址粘到最上面的 <code>Connect To</code> 框（Ctrl+V）<br>' +
+    '<b>3.</b> 回车，或点 <code>Connect</code>' +
+    '</div>';
+  h += '<div class="hint" style="margin-top:10px">Winbox 会记住连过的地址，' +
+    '连过一次以后直接在它的地址列表里选就行，不用每次都复制。</div>';
+  h += '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);' +
+    'display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+    '<a class="btn" href="' + esc('nh://winbox?host=' + encodeURIComponent(host)) + '">' +
+      ic('link', 15) + '尝试直接启动</a>' +
+    '<button class="btn" data-act="setup">' + ic('info', 15) + '安装联动（以后免复制）</button>' +
+    '</div>';
+  h += '</div><div class="mfoot"><span class="spacer"></span>' +
+    '<button class="btn" data-act="close">关闭</button></div></div>';
+  mountModal(h);
+  var modal = document.querySelector('.mask .modal');
+  if (!modal) return;
+  var inp = document.getElementById('wbHost');
+  if (inp) { try { inp.focus(); inp.select(); } catch (e) {} }
+  modal.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'close') return closeModal();
+    if (act === 'copyhost') {
+      var el = document.getElementById('wbHost');
+      if (el) { try { el.focus(); el.select(); } catch (x) {} copyText(el.value); }
+      return;
+    }
+    if (act === 'setup') { closeModal(); openWinboxHelp(host); }
+  });
+}
+
+/* ---------------- Winbox 本地联动 ---------------- */
+var winboxTimer = null;
+var LS_WINBOX_OK = 'nh_winbox_ok';
+
+/* 点了 Winbox 卡片后等一下：页面被切走说明本地程序起来了；
+   还停在原地说明协议没装，这时自动把安装说明弹出来（只提醒一次）。 */
+function armWinboxFallback(host) {
+  if (winboxTimer) clearTimeout(winboxTimer);
+  winboxTimer = setTimeout(function () {
+    winboxTimer = null;
+    if (document.hidden) {
+      try { localStorage.setItem(LS_WINBOX_OK, '1'); } catch (e) {}
+      return;
+    }
+    var ok = false;
+    try { ok = localStorage.getItem(LS_WINBOX_OK) === '1'; } catch (e) {}
+    if (ok) return;
+    openWinboxHelp(host);
+  }, 1600);
+}
+
+function openWinboxHelp(host) {
+  var base = location.origin;
+  host = host || '';
+  var testHref = 'nh://winbox?host=' + encodeURIComponent(host || '10.94.6.9');
+  var h = '<div class="modal" style="max-width:600px"><div class="mhead">' +
+    '<h3>Winbox 本地联动设置</h3>' +
+    '<button class="btn icon ghost" data-act="close">' + ic('close', 17) + '</button></div>' +
+    '<div class="mbody">';
+  h += '<div class="notice" style="margin-bottom:16px">' + ic('info', 15) +
+    '<div>点 Winbox 卡片没反应，是因为 <b>Windows 上的 Winbox 默认不注册任何 URL 协议</b>，' +
+    '浏览器不知道该叫谁。装一次下面的小程序就好了（只写当前用户，<b>不需要管理员权限</b>）。</div></div>';
+  h += '<div style="font-size:13px;line-height:1.9">' +
+    '<b>1.</b> 下载这<b>三个文件</b>，放在<b>同一个文件夹</b>里：<br>' +
+    '<div style="margin:8px 0 8px 18px;display:flex;gap:8px;flex-wrap:wrap">' +
+    '<a class="btn" href="' + base + '/tools/nh-setup.cmd" download>' + ic('down', 15) +
+    ' nh-setup.cmd</a>' +
+    '<a class="btn" href="' + base + '/tools/nh-setup.ps1" download>' + ic('down', 15) +
+    ' nh-setup.ps1</a>' +
+    '<a class="btn" href="' + base + '/tools/nh-open.ps1" download>' + ic('down', 15) +
+    ' nh-open.ps1</a></div>' +
+    '<b>2.</b> 双击 <code>nh-setup.cmd</code>。它会自动找 winbox.exe，' +
+    '<b>找不到（或找错了）会弹出文件选择框让你指定</b>。<br>' +
+    '<b>3.</b> 装完它会问你要不要立刻用 10.94.6.9 试一下，选 Y 即可验证。<br>' +
+    '<b>4.</b> 回到导航中心，再点 Winbox 卡片。' +
+    '</div>';
+  h += '<div class="notice" style="margin-top:16px">' + ic('info', 15) +
+    '<div><b>每台电脑的 winbox.exe 路径都不一样</b>，所以路径是<b>存在本机</b>的' +
+    '（<code>%LOCALAPPDATA%\\notice-hub\\config.json</code>），不需要在网页上配。' +
+    '换路径就再运行一次 nh-setup.cmd。</div></div>';
+  h += '<div class="hint" style="margin-top:12px">' +
+    '<b>排查：</b>命令行运行 <code>nh-setup.cmd -Show</code> 可看当前配置与协议是否注册。<br>' +
+    '<b>改路径：</b>再运行一次 <code>nh-setup.cmd</code>。<br>' +
+    '<b>批量部署：</b><code>nh-setup.cmd "C:\\Tools\\winbox.exe"</code> 可直接指定路径、无需交互。<br>' +
+    '<b>卸载：</b><code>nh-setup.cmd -Uninstall</code></div>';
+  h += '<div class="hint">如果公司策略不让下载 .cmd/.ps1，' +
+    '把 <code>' + esc(base) + '/tools/</code> 下的文件名复制到浏览器地址栏直接打开也可以。</div>';
+  h += '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">' +
+    '<b style="font-size:13px">装完先测一下：</b> ' +
+    '<a class="btn" href="' + esc(testHref) + '">' + ic('link', 15) +
+    ' 测试打开 Winbox' + (host ? '（' + esc(host) + '）' : '') + '</a>' +
+    '<div class="hint">点它会直接调用本地处理程序。若 Winbox 起来了，说明装好了；' +
+    '若浏览器弹「是否允许打开」选允许即可。' +
+    (host ? '' : '（可以先在「管理导航」里把设备地址改成你的机器，这里是示例地址）') +
+    '</div></div>';
+  h += '</div><div class="mfoot"><span class="spacer"></span>' +
+    '<button class="btn" data-act="close">关闭</button></div></div>';
+  mountModal(h);
+  var modal = document.querySelector('.mask .modal');
+  if (modal) modal.addEventListener('click', function (e) {
+    if (e.target.closest('[data-act="close"]')) closeModal();
+  });
+}
+
+function navRecordVisit(id) {
+  if (!id) return;
+  api('/api/nav/visit', { method: 'POST', body: { id: Number(id) } }).catch(function () {});
+}
+
+/* 切换「常用」（全局字段，需管理员） */
+function navToggleFav(id) {
+  var it = (S.navAll || []).filter(function (x) { return String(x.id) === String(id); })[0];
+  if (!it) return;
+  if (!isAdmin()) { toast('「常用」是全局设置，需要管理员登录后修改', 'err'); return; }
+  var next = it.favorite ? 0 : 1;
+  api('/api/nav/items/' + id, { method: 'PUT', body: { favorite: next } })
+    .then(function () {
+      it.favorite = next;
+      /* 以前这里 loadNav()：重取 236KB 的 /api/nav 并重建 435 张卡片，
+         点一下星标要卡一下。现在只改受影响的卡片 + 重画那一小块常用区。 */
+      Array.prototype.forEach.call(
+        document.querySelectorAll('.navcard[data-id="' + id + '"]'), function (c) {
+          c.classList.toggle('is-fav', !!next);
+          c.setAttribute('data-fav', next ? '1' : '0');
+          var b = c.querySelector('[data-star]');
+          if (b) { b.classList.toggle('on', !!next); b.title = next ? '取消常用' : '设为常用'; }
+        });
+      /* 左栏的「★ 常用」计数要跟着变；正在看常用时右栏也要重画。
+         注意不要整页重取 /api/nav（236KB）——那是以前点一下星标就卡一下的原因。 */
+      renderNavSide();
+      if (navSelGroup() === 'fav') renderPane();
+      toast(next ? '已加入常用' : '已取消常用', 'ok');
+    })
+    .catch(function (err) { toast(err.message, 'err'); });
+}
+
+function navLinkClick(e) {
+  /* ★ 常用：在卡片 <a> 内部，必须先拦下来，否则会连同卡片一起跳转 */
+  var star = e.target.closest('[data-star]');
+  if (star) {
+    e.preventDefault();
+    e.stopPropagation();
+    navToggleFav(star.getAttribute('data-star'));
+    return;
+  }
+  /* 客户筛选 chip：一次只显示一个客户的设备 */
+  var chip = e.target.closest('[data-subpick]');
+  if (chip) {
+    e.preventDefault();
+    var gid = chip.getAttribute('data-gid');
+    var sub = chip.getAttribute('data-subpick') || '';
+    setNavSubSel(gid, sub);
+    var box = chip.closest('.navsubs');
+    if (box) {
+      Array.prototype.forEach.call(box.querySelectorAll('[data-subpick]'), function (c) {
+        c.classList.toggle('on', (c.getAttribute('data-subpick') || '') === sub);
+      });
+    }
+    applyNavFilter();
+    return;
+  }
+  var a = e.target.closest('[data-id]');
+  if (!a) return;
+  navRecordVisit(a.getAttribute('data-id'));
+  /* Winbox 卡片：本机没装 nh:// 处理程序时，浏览器不会给任何反馈。
+     这里兜一个提示，免得用户以为是系统坏了。 */
+  if (a.getAttribute('data-winbox') === '1') {
+    /* 零安装主路径：复制地址 + 弹引导。不走 nh:// 导航，
+       因为没装联动时浏览器会留下一个空白页，体验更像「坏了」。 */
+    e.preventDefault();
+    var wbHost = a.getAttribute('data-host') || '';
+    if (wbHost) copyText(wbHost);
+    openWinboxLaunch(wbHost, a.getAttribute('data-name') || '');
+    return;
+  }
+  /* 站内链接（如「重要通知中心」）现在就是普通链接、整页跳转，
+     不再需要 preventDefault 做 SPA 切换。中键/Ctrl+点击由浏览器照常新开标签。 */
+}
+
+document.getElementById('navGroups').addEventListener('click', navLinkClick);
+
+document.getElementById('navRecent').addEventListener('click', navLinkClick);
+
+document.getElementById('navFlat').addEventListener('click', navLinkClick);
+
+/* ======================= 导航项右键菜单 =======================
+   卡片上右键直接出「编辑 / 删除 / 复制地址」，不用先打开「管理导航」
+   再在下拉里翻到那个分组、再在长列表里找到那一行。
+   编辑/删除只有管理员能用；普通用户只有复制地址和打开。
+   注意：编辑表单是挂在「管理导航」弹窗里的（写到 #navmBody），
+   所以要先 openNavManage() 建好壳再切到表单视图。 */
+var navCtxEl = null, navCtxId = 0;
+
+function closeNavCtx() {
+  if (navCtxEl && navCtxEl.parentNode) navCtxEl.parentNode.removeChild(navCtxEl);
+  navCtxEl = null;
+  navCtxId = 0;
+}
+
+function openNavCtxMenu(x, y, id) {
+  closeNavCtx();
+  var it = findNavItem(id);
+  if (!it) return;
+  navCtxId = id;
+  var isWinbox = (it.launch || 'web').toLowerCase() === 'winbox';
+  var addr = isWinbox ? (it.launch_host || it.url || '') : (it.url || '');
+  var rows = [];
+  rows.push('<button data-ctx="copy">' + ic('copy', 14) + '复制地址</button>');
+  if (!isWinbox && it.url) {
+    rows.push('<button data-ctx="open">' + ic('external', 14) + '在新标签打开</button>');
+  }
+  if (isWinbox) {
+    rows.push('<button data-ctx="copyhost">' + ic('link', 14) + '用 Winbox 打开</button>');
+  }
+  if (isAdmin()) {
+    rows.push('<div class="ctxline"></div>');
+    rows.push('<button data-ctx="edit">' + ic('edit', 14) + '编辑此项</button>');
+    rows.push('<button data-ctx="del" class="danger">' + ic('trash', 14) + '删除此项</button>');
+  }
+  var el = document.createElement('div');
+  el.className = 'ctxmenu';
+  el.setAttribute('role', 'menu');
+  el.innerHTML = '<div class="ctxname" title="' + esc(it.name) + '">' + esc(it.name) + '</div>' +
+    rows.join('');
+  document.body.appendChild(el);
+  /* 贴着鼠标出现，但不允许超出视口 */
+  var r = el.getBoundingClientRect();
+  el.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + 'px';
+  el.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) + 'px';
+  navCtxEl = el;
+}
+
+/* 三个卡片容器（分组面板 / 搜索结果 / 最近访问）都要挂，否则某些位置右键没反应。
+   写成具名函数是为了能被测试直接调用（测试只抽取函数，不执行顶层语句）。 */
+function bindNavCtxMenus() {
+  ['navGroups', 'navFlat', 'navRecent'].forEach(function (cid) {
+    var box = document.getElementById(cid);
+    if (!box) return;
+    box.addEventListener('contextmenu', function (e) {
+      var a = e.target.closest('a[data-id]');
+      if (!a || !(S.nav || {}).groups) return;
+      e.preventDefault();
+      openNavCtxMenu(e.clientX, e.clientY, Number(a.getAttribute('data-id')));
+    });
+  });
+}
+bindNavCtxMenus();
+
+/* 右键菜单里的动作（捕获阶段处理，避免被卡片的 click 抢走） */
+document.addEventListener('click', function (e) {
+  if (!navCtxEl) return;
+  var btn = e.target.closest('[data-ctx]');
+  if (!btn) {
+    /* 点在菜单外面：先只关菜单。如果点的是另一张卡片，把这次点击吃掉，
+       否则「关菜单」和「打开系统」会同时发生，手感很怪。 */
+    var onCard = e.target.closest ? e.target.closest('a[data-id]') : null;
+    closeNavCtx();
+    if (onCard) { e.stopPropagation(); e.preventDefault(); }
+    return;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  var act = btn.getAttribute('data-ctx');
+  var it = findNavItem(navCtxId);
+  closeNavCtx();
+  if (!it) return;
+
+  if (act === 'copy') {
+    var addr = (it.launch || 'web').toLowerCase() === 'winbox'
+      ? (it.launch_host || '') : (it.url || '');
+    if (!addr) return toast('这一项没有填地址', 'err');
+    copyText(addr);
+    return toast('地址已复制：' + addr);
+  }
+  if (act === 'copyhost') {
+    var host = it.launch_host || it.url || '';
+    if (host) copyText(host);
+    return openWinboxLaunch(host, it.name || '');
+  }
+  if (act === 'open') {
+    if (!it.url) return toast('这一项没有填地址', 'err');
+    return window.open(it.url, '_blank', 'noopener');
+  }
+  if (act === 'edit') {
+    S.navmGroup = it.group_id || S.navmGroup;
+    openNavManage();            // 先建好弹窗壳（#navmBody 在里面）
+    return showNavItemForm(findNavItem(it.id));
+  }
+  if (act === 'del') {
+    if (!isAdmin()) return toast('只有管理员能删除', 'err');
+    if (!confirm('删除导航项「' + (it.name || '') + '」？')) return;
+    return api('/api/nav/items/' + it.id, { method: 'DELETE' })
+      .then(afterNavChange).catch(function (err) { toast(err.message, 'err'); });
+  }
+}, true);
+
+/* Esc 关右键菜单；滚轮/改窗口大小也关掉，避免菜单飘在错的位置 */
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && navCtxEl) closeNavCtx();
+});
+window.addEventListener('blur', closeNavCtx);
+window.addEventListener('resize', closeNavCtx);
+document.addEventListener('scroll', function () { if (navCtxEl) closeNavCtx(); }, true);
+
+/* 左侧「大标题」：点一下右边只显示这一组 */
+document.getElementById('navSide').addEventListener('click', function (e) {
+  var b = e.target.closest('[data-navsel]');
+  if (!b) return;
+  setNavSelGroup(b.getAttribute('data-navsel'));
+  /* 切组时清掉搜索词，否则右栏还停在扁平结果上 */
+  S.navQ = '';
+  var qi = document.getElementById('navQ');
+  if (qi) qi.value = '';
+  renderNavSide();
+  renderPane();
+  applyNavFilter();
+});
+
+/* 客户 chip 太多时的筛选框（84 个客户时才会渲染） */
+document.getElementById('navGroups').addEventListener('input', function (e) {
+  var f = e.target.closest('[data-subfilter]');
+  if (!f) return;
+  var q = (f.value || '').trim().toLowerCase();
+  var box = f.closest('.navsubs');
+  if (!box) return;
+  var chips = box.querySelectorAll('[data-subpick]');
+  var n = 0;
+  Array.prototype.forEach.call(chips, function (c) {
+    var v = c.getAttribute('data-subpick') || '';
+    var on = !v || !q || v.toLowerCase().indexOf(q) >= 0;
+    c.style.display = on ? '' : 'none';
+    if (on && v) n++;
+  });
+  var cnt = box.querySelector('[data-subcnt]');
+  if (cnt) cnt.textContent = q ? (n + ' 个客户匹配') : ((chips.length - 1) + ' 个客户');
+});
+
+/* ======================= Ctrl+K 命令面板 ======================= */
+var cmdkItems = [], cmdkCur = 0, cmdkOn = false;
+
+function cmdRender(q) {
+  q = (q || '').trim().toLowerCase();
+  var list = (S.navAll || []).filter(function (i) {
+    return !q || navSearchText(i).indexOf(q) >= 0;
+  });
+  list.sort(navRank);
+  cmdkItems = list.slice(0, 40);
+  cmdkCur = 0;
+  var el = document.getElementById('cmdkList');
+  if (!cmdkItems.length) {
+    el.innerHTML = '<div class="cmdkempty">没有匹配「' + esc(q) + '」的系统</div>';
+    document.getElementById('cmdkCnt').textContent = '';
+    return;
+  }
+  el.innerHTML = cmdkItems.map(flatRowHtml).join('');
+  var rows = el.querySelectorAll('.flatrow');
+  if (rows[0]) rows[0].classList.add('cur');
+  document.getElementById('cmdkCnt').textContent = cmdkItems.length + ' 个结果';
+}
+
+function cmdOpen() {
+  if (!S.navAll) loadNav();
+  cmdkOn = true;
+  document.getElementById('cmdk').classList.add('on');
+  var inp = document.getElementById('cmdkQ');
+  inp.value = '';
+  cmdRender('');
+  inp.focus();
+}
+
+function cmdClose() {
+  cmdkOn = false;
+  document.getElementById('cmdk').classList.remove('on');
+}
+
+function cmdMove(d) {
+  var rows = document.querySelectorAll('#cmdkList .flatrow');
+  if (!rows.length) return;
+  if (rows[cmdkCur]) rows[cmdkCur].classList.remove('cur');
+  cmdkCur = (cmdkCur + d + rows.length) % rows.length;
+  rows[cmdkCur].classList.add('cur');
+  rows[cmdkCur].scrollIntoView({ block: 'nearest' });
+}
+
+function cmdGo() {
+  var it = cmdkItems[cmdkCur];
+  if (!it) return;
+  navRecordVisit(it.id);
+  var route = navIsApp(it) ? '' : internalRoute(it.url);
+  cmdClose();
+  if (route) { location.href = route; return; }
+  /* Winbox 项：走「复制地址 + 引导」这条零安装路径 */
+  if ((it.launch || 'web').toLowerCase() === 'winbox') {
+    var h4 = String(it.launch_host || '').trim() || hostOf(it.url);
+    if (h4) copyText(h4);
+    openWinboxLaunch(h4, it.name || '');
+    return;
+  }
+  /* 其它自定义协议用当前窗口跳转：window.open 传自定义协议会被浏览器静默拦掉 */
+  if (navIsApp(it)) { location.href = navOpenTarget(it); return; }
+  window.open(navOpenTarget(it), '_blank', 'noopener');
+}
+
+document.getElementById('cmdkQ').addEventListener('input', function () { cmdRender(this.value); });
+
+document.getElementById('cmdkQ').addEventListener('keydown', function (e) {
+  if (e.key === 'ArrowDown') { e.preventDefault(); cmdMove(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); cmdMove(-1); }
+  else if (e.key === 'Enter') { e.preventDefault(); cmdGo(); }
+  else if (e.key === 'Escape') { e.preventDefault(); cmdClose(); }
+});
+
+document.getElementById('cmdk').addEventListener('click', function (e) {
+  if (e.target === this) { cmdClose(); return; }        // 点遮罩关闭
+  var row = e.target.closest('.flatrow');
+  if (!row) return;
+  e.preventDefault();
+  var idx = Array.prototype.indexOf.call(
+    document.querySelectorAll('#cmdkList .flatrow'), row);
+  if (idx >= 0) cmdkCur = idx;
+  cmdGo();
+});
+
+var navTimer = null;
+
+document.getElementById('navQ').addEventListener('input', function (e) {
+  clearTimeout(navTimer);
+  var v = e.target.value;
+  navTimer = setTimeout(function () { S.navQ = v; applyNavFilter(); }, 120);
+});
+
+document.getElementById('navQClear').addEventListener('click', function () {
+  document.getElementById('navQ').value = '';
+  S.navQ = '';
+  applyNavFilter();
+});
+
+document.getElementById('navRefresh').addEventListener('click', function () {
+  var btn = this;
+  btn.disabled = true;
+  api('/api/nav/probe', { method: 'POST' })
+    .then(function () { return loadNav(); })
+    .then(function () { toast('已重新探测', 'ok'); })
+    .catch(function (err) { toast(err.message, 'err'); })
+    .then(function () { btn.disabled = false; });
+});
+
+document.getElementById('navManage').addEventListener('click', function () {
+  if (isAdmin()) return openNavManage();
+  // 未登录/非管理员：记下意图，登录成功后直接把管理面板打开
+  S.pendingManage = true;
+  go('notices');
+});
+
+/* 账号管理：和「管理导航」并列放在门户顶栏。
+   原来它只藏在「通知中心 → 右上角更多」里，而导航页是默认首页、顶栏没有「更多」，
+   结果就是刷新后根本找不到入口。 */
+document.getElementById('navAccount').addEventListener('click', function () {
+  if (isAdmin()) return openUsers();
+  S.pendingAccount = true;
+  go('notices');
+});
+
+/* ---- 导航管理面板 ---- */
+function navManageShell(inner, title) {
+  return '<div class="modal wide"><div class="mhead"><h3>' + esc(title || '管理导航') + '</h3>' +
+    '<button class="btn icon ghost" data-act="close">' + ic('close', 17) + '</button></div>' +
+    '<div class="mbody" id="navmBody">' + inner + '</div>' +
+    '<div class="mfoot"><span class="spacer"></span>' +
+    '<button class="btn" data-act="close">关闭</button></div></div>';
+}
+
+function openNavManage() {
+  S.navFlow = 'list';
+  mountModal(navManageShell('<div style="color:var(--mute)">加载中…</div>'));
+  var mask = document.getElementById('maskBg');
+  mask.addEventListener('click', navManageClick);
+  mask.addEventListener('change', navManageChange);
+  mask.addEventListener('dragstart', navDragStart);
+  mask.addEventListener('dragover', navDragOver);
+  mask.addEventListener('dragleave', navDragLeave);
+  mask.addEventListener('drop', navDrop);
+  mask.addEventListener('dragend', navDragEnd);
+  renderNavManageList();
+}
+
+/* 切换「正在编辑哪个分组的导航项」 */
+function navManageChange(e) {
+  var sel = e.target.closest('#navmGroupSel');
+  if (!sel) return;
+  S.navmGroup = Number(sel.value);
+  renderNavManageList();
+}
+
+/* ============ 拖拽排序（分组顺序 / 组内项顺序）============ */
+var NAVDRAG = { kind: '', id: '', over: '', after: false, el: null };
+
+function navDragRow(e) {
+  return e.target.closest('[data-gdrag],[data-idrag]');
+}
+
+function navClearDropMarks() {
+  Array.prototype.forEach.call(
+    document.querySelectorAll('.dropbefore,.dropafter'), function (el) {
+      el.classList.remove('dropbefore');
+      el.classList.remove('dropafter');
+    });
+}
+
+function navResetDrag() {
+  navClearDropMarks();
+  if (NAVDRAG.el) NAVDRAG.el.classList.remove('dragging');
+  NAVDRAG = { kind: '', id: '', over: '', after: false, el: null };
+}
+
+function navDragStart(e) {
+  /* 从按钮/输入框上起手不该拖行，否则点「编辑」稍微一挪就触发拖拽 */
+  if (e.target.closest('button,input,select,a')) return;
+  var row = navDragRow(e);
+  if (!row) return;
+  var gid = row.getAttribute('data-gdrag'), iid = row.getAttribute('data-idrag');
+  NAVDRAG.kind = gid !== null ? 'group' : 'item';
+  NAVDRAG.id = gid !== null ? gid : iid;
+  NAVDRAG.el = row;
+  row.classList.add('dragging');
+  try {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(NAVDRAG.id));
+  } catch (x) {}
+}
+
+function navDragOver(e) {
+  if (!NAVDRAG.id) return;
+  var sel = NAVDRAG.kind === 'group' ? '[data-gdrag]' : '[data-idrag]';
+  var row = e.target.closest(sel);
+  if (!row || row === NAVDRAG.el) { navClearDropMarks(); NAVDRAG.over = ''; return; }
+  e.preventDefault();                       /* 必须 preventDefault 才允许放下 */
+  try { e.dataTransfer.dropEffect = 'move'; } catch (x) {}
+  var r = row.getBoundingClientRect();
+  var after = (e.clientY - r.top) > r.height / 2;
+  navClearDropMarks();
+  row.classList.add(after ? 'dropafter' : 'dropbefore');
+  NAVDRAG.over = row.getAttribute(NAVDRAG.kind === 'group' ? 'data-gdrag' : 'data-idrag');
+  NAVDRAG.after = after;
+}
+
+function navDragLeave(e) {
+  if (!NAVDRAG.id) return;
+  if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest('#navmBody')) {
+    navClearDropMarks();
+  }
+}
+
+function navDrop(e) {
+  if (!NAVDRAG.id || !NAVDRAG.over) return;
+  e.preventDefault();
+  var kind = NAVDRAG.kind, id = NAVDRAG.id;
+  var over = NAVDRAG.over, after = NAVDRAG.after;
+  navResetDrag();
+  if (!over || String(over) === String(id)) return;
+
+  var attr = kind === 'group' ? 'data-gdrag' : 'data-idrag';
+  var afterId;
+  if (after) {
+    afterId = over;
+  } else {
+    /* 插到目标行「前面」等价于插到它的上一行「后面」；没有上一行就是置顶 */
+    var row = document.querySelector('[' + attr + '="' + over + '"]');
+    var prev = row && row.previousElementSibling;
+    afterId = (prev && prev.getAttribute(attr)) || null;
+  }
+  var url = kind === 'group' ? ('/api/nav/groups/' + id) : ('/api/nav/items/' + id);
+  api(url, { method: 'PUT', body: { reorder_after: afterId } })
+    .then(function () {
+      toast('顺序已更新', 'ok');
+      return navRefreshAnd({ flow: 'list' });
+    })
+    .catch(function (err) { toast(err.message, 'err'); });
+}
+
+function navDragEnd() { navResetDrag(); }
+
+function navManageList() {
+  var nav = S.nav || { groups: [] };
+  var groups = nav.groups || [];
+
+  /* 一次只渲染一个分组的导航项：原来把 17 个组、435 行一次性铺出来，
+     每行还有 2 个 SVG 箭头，光这个面板就有 800 多个 svg。
+     注意：下拉里必须列出**全部分组**（含还没有导航项的新建分组），
+     早先只列「有项的组」，导致刚建的空分组在这个下拉里选不到，
+     看起来就像「有些分组没法调整」。 */
+  var cur = S.navmGroup;
+  if (!groups.some(function (g) { return g.id === cur; })) {
+    var firstWith = groups.filter(function (g) { return (g.items || []).length; })[0];
+    cur = firstWith ? firstWith.id : (groups[0] ? groups[0].id : 0);
+    S.navmGroup = cur;
+  }
+  var curGroup = groups.filter(function (g) { return g.id === cur; })[0];
+  var curItems = (curGroup && curGroup.items) || [];
+
+  var h = '<div class="notice" style="margin-bottom:16px">' + ic('info', 15) +
+    '<div>导航项默认「免登录可见」，任何能访问本页的内网用户都能看到卡片和地址。' +
+    '想收紧某个系统，把可见性改成「需登录可见」或「仅管理员可见」。<br>' +
+    '<b>排序可以拖动</b>：按住行左侧的 ⠿ 手柄上下拖，也可以继续用 ↑↓ 按钮。</div></div>';
+
+  h += '<div class="sechead" style="margin:0 0 10px">分组<span style="font-weight:400;' +
+    'color:var(--mute);font-size:12px"> · 拖动可调整分组顺序</span></div>' +
+    '<div class="filelist navm-groups" id="navmGroups">';
+  h += groups.map(function (g) {
+    return '<div class="fi" draggable="true" data-gdrag="' + g.id + '">' +
+      '<span class="dragh" title="拖动调整分组顺序">⠿</span>' +
+      '<span style="flex:1">' + esc(g.name) +
+      '<span style="color:var(--mute);font-size:12px"> · ' + (g.items || []).length + ' 项</span></span>' +
+      '<button class="mini" data-gmove="up" data-id="' + g.id + '">' + ic('arrowUp', 13) + '</button>' +
+      '<button class="mini" data-gmove="down" data-id="' + g.id + '">' + ic('arrowDown', 13) + '</button>' +
+      '<button class="mini" data-gedit="' + g.id + '" data-name="' + esc(g.name) + '">改名</button>' +
+      '<button class="mini danger" data-gdel="' + g.id + '" data-name="' + esc(g.name) +
+        '" data-cnt="' + (g.items || []).length + '">删除</button></div>';
+  }).join('');
+  h += '</div><div style="display:flex;gap:8px;margin-top:10px">' +
+    '<input id="navNewGroup" placeholder="新分组名称" class="formin">' +
+    '<button class="btn primary" data-act="addgroup">' + ic('plus', 15) + '新增分组</button></div>';
+
+  h += '<div class="sechead" style="margin:24px 0 10px">导航项<span style="font-weight:400;' +
+    'color:var(--mute);font-size:12px"> · 拖动可调整组内顺序</span></div>';
+  if (!groups.length) {
+    h += '<div style="color:var(--mute);font-size:13px">还没有分组，请先在上方新增一个分组。</div>';
+  } else {
+    /* 工具栏常驻：分组下拉 + 项数 + 「新增导航项」。
+       原来「新增导航项」在整张表的最下面，客户站点那组 275 项时
+       要滚很久才够得着，等于藏起来了。 */
+    h += '<div class="navm-toolbar">' +
+      '<select id="navmGroupSel" class="formin" style="max-width:340px">' +
+      groups.map(function (g) {
+        var n = (g.items || []).length;
+        return '<option value="' + g.id + '"' + (g.id === cur ? ' selected' : '') + '>' +
+          esc(g.name) + '（' + (n ? n + ' 项' : '空') + '）</option>';
+      }).join('') + '</select>' +
+      '<span style="font-size:12px;color:var(--mute)">' +
+      (curItems.length ? ('该组 ' + curItems.length + ' 项') : '该组还没有导航项') + '</span>' +
+      '<span class="spacer"></span>' +
+      '<button class="btn primary" data-act="additem">' + ic('plus', 15) + '新增导航项</button>' +
+      '</div>';
+    /* 列表限高可滚动（.navm-scroll），表头吸顶，工具栏不会滚走 */
+    h += curItems.length ? ('<div class="navm-scroll"><table class="utable" id="navmItems">' +
+      '<thead><tr><th style="width:20px"></th><th style="width:14px"></th>' +
+      '<th>名称 / 地址</th><th style="width:84px">可见性</th>' +
+      '<th class="navm-acts">操作</th></tr></thead><tbody>' +
+      curItems.map(function (it) {
+        var st = it.status || {};
+        var cls = st.ok === true ? 'ok' : (st.ok === false ? 'bad' : 'unk');
+        return '<tr draggable="true" data-idrag="' + it.id + '">' +
+          '<td style="width:20px"><span class="dragh" title="拖动调整顺序">⠿</span></td>' +
+          '<td style="width:14px"><span class="navst ' + cls +
+            '" style="position:static;display:inline-block"></span></td>' +
+          '<td><div class="navm-nm"><b title="' + esc(it.name) + '">' + esc(it.name) + '</b>' +
+            (it.favorite ? '<span class="me">常用</span>' : '') + '</div>' +
+            '<div class="navm-url" title="' + esc(it.url || '') + '">' +
+            esc(it.url || '（未填地址）') + '</div></td>' +
+          '<td style="width:84px;color:var(--dim);font-size:12px">' + esc(it.vis_label || '') + '</td>' +
+          '<td class="navm-acts">' +
+            '<button class="mini" data-imove="up" data-id="' + it.id + '">' + ic('arrowUp', 13) + '</button> ' +
+            '<button class="mini" data-imove="down" data-id="' + it.id + '">' + ic('arrowDown', 13) + '</button> ' +
+            '<button class="mini" data-iedit="' + it.id + '">编辑</button> ' +
+            '<button class="mini danger" data-idel="' + it.id + '" data-name="' + esc(it.name) + '">删除</button>' +
+          '</td></tr>';
+      }).join('') + '</tbody></table></div>')
+      : '<div class="navm-scroll"><div class="navm-empty">该分组下还没有导航项，' +
+        '点右上角的「新增导航项」添加。</div></div>';
+  }
+  return h;
+}
+
+function renderNavManageList() {
+  document.getElementById('navmBody').innerHTML = navManageList();
+}
+
+function findNavItem(id) {
+  var groups = (S.nav || {}).groups || [];
+  for (var i = 0; i < groups.length; i++) {
+    var its = groups[i].items || [];
+    for (var j = 0; j < its.length; j++) if (its[j].id === id) return its[j];
+  }
+  return null;
+}
+
+function navItemForm(item, presetGroupId) {
+  var it = item || {};
+  var groups = (S.nav || {}).groups || [];
+  var gid = it.group_id || presetGroupId || (groups[0] ? groups[0].id : 0);
+  var h = '<div class="field"><label>名称 *</label><input id="nfName" value="' + esc(it.name || '') +
+    '" placeholder="如：CSE 排班系统"></div>';
+  h += '<div class="field"><label>地址</label><input id="nfUrl" value="' + esc(it.url || '') +
+    '" placeholder="http://10.127.207.71:3005"></div>';
+  h += '<div class="field"><label>一句话描述</label><input id="nfDesc" value="' +
+    esc(it.description || '') + '" placeholder="如：工程师轮班排布"></div>';
+  h += '<div class="grid3">';
+  h += '<div class="field"><label>分组</label><select id="nfGroup">' +
+    groups.map(function (g) {
+      return '<option value="' + g.id + '"' + (g.id === gid ? ' selected' : '') + '>' +
+        esc(g.name) + '</option>';
+    }).join('') + '</select></div>';
+  h += '<div class="field"><label>二级分组（可选）</label><input id="nfSub" value="' +
+    esc(it.subgroup || '') + '" placeholder="如客户代号 QXJT"></div>';
+  h += '<div class="field"><label>可见性</label><select id="nfVis">' +
+    (S.nav.visibilities || []).map(function (v) {
+      return '<option value="' + v.value + '"' +
+        ((it.visible_to || 'guest') === v.value ? ' selected' : '') + '>' + esc(v.label) + '</option>';
+    }).join('') + '</select></div>';
+  h += '</div>';
+  h += '<div class="grid3">';
+  h += '<div class="field"><label>色块颜色</label><input type="color" id="nfColor" value="' +
+    esc(it.color || '#3b82f6') + '" style="height:40px;padding:3px"></div>';
+  h += '<div class="field"><label>标签（逗号分隔）</label><input id="nfTags" value="' +
+    esc((it.tags || []).join(', ')) + '" placeholder="排班, CSE"></div>';
+  h += '<div class="field"><label>图标文字（留空取首字）</label><input id="nfIcon" value="' +
+    esc(it.icon || '') + '" maxlength="4" placeholder="如 CSE"></div>';
+  h += '</div>';                       /* 关掉「色块/标签/图标」这一组 grid3 */
+  h += '<div class="grid3">';
+  h += '<div class="field"><label>打开方式</label><select id="nfLaunch">' +
+    [['web', '浏览器打开（默认）'], ['winbox', 'Winbox 本地应用'], ['custom', '自定义协议']]
+      .map(function (o) {
+        return '<option value="' + o[0] + '"' +
+          ((it.launch || 'web') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+      }).join('') + '</select></div>';
+  h += '<div class="field"><label>设备地址（Winbox 用）</label><input id="nfLaunchHost" value="' +
+    esc(it.launch_host || '') +
+    '" placeholder="如 192.168.88.1 或 10.0.0.1:8291"></div>';
+  h += '<div class="field"><label>自定义协议 URL</label><input id="nfLaunchArg" value="' +
+    esc(it.launch_arg || '') + '" placeholder="如 ssh://user@host"></div>';
+  h += '</div>';
+  h += '<div class="field"><label>选项</label><div style="display:flex;gap:14px;padding-top:9px">' +
+    '<label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--dim)">' +
+      '<input type="checkbox" id="nfProbe" style="width:auto" ' +
+      ((it.probe === undefined || it.probe) ? 'checked' : '') + '> 在线探测</label>' +
+    '<label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--dim)">' +
+      '<input type="checkbox" id="nfFav" style="width:auto" ' + (it.favorite ? 'checked' : '') +
+      '> 标记常用</label></div></div>';
+  h += '<div class="hint">地址不给协议头时会自动补 http://。只有内网地址会被探测（防止本服务被当成外部端口扫描器）。</div>';
+  return h;
+}
+
+function showNavItemForm(item, presetGroupId) {
+  S.navFlow = 'item';
+  var isNew = !item;
+  document.getElementById('navmBody').innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">' +
+      '<button class="btn icon ghost" data-act="back">' + ic('left', 16) + '</button>' +
+      '<b style="font-size:14.5px">' + (isNew ? '新增导航项' : '编辑导航项') + '</b></div>' +
+    navItemForm(item, presetGroupId) +
+    '<div style="display:flex;gap:10px;margin-top:18px">' +
+      '<button class="btn primary" data-act="saveitem" data-id="' + (item ? item.id : '') + '">' +
+        ic('check', 15) + '保存</button>' +
+      '<button class="btn" data-act="back">取消</button></div>';
+}
+
+function navManageClick(e) {
+  var el = e.target.closest('[data-act],[data-gmove],[data-gedit],[data-gdel],[data-imove],[data-iedit],[data-idel]');
+  if (!el) return;
+  var act = el.getAttribute('data-act');
+  if (act === 'close') return closeModal();
+  if (act === 'back') { S.navFlow = 'list'; return renderNavManageList(); }
+  if (act === 'addgroup') {
+    var gname = (document.getElementById('navNewGroup').value || '').trim();
+    if (!gname) return toast('请输入分组名', 'err');
+    return api('/api/nav/groups', { method: 'POST', body: { name: gname } })
+      .then(function (res) {
+        /* 新建后直接切到这个分组，方便马上往里加导航项 */
+        if (res && res.id) S.navmGroup = res.id;
+        afterNavChange(res);
+        toast('已新增分组「' + gname + '」', 'ok');
+      }).catch(function (err) { toast(err.message, 'err'); });
+  }
+  if (act === 'additem') {
+    /* 带上「当前正在看的分组」，否则表单永远默认第一个分组，
+       在别的分组里点新增会把项加到错的地方。 */
+    return showNavItemForm(null, S.navmGroup || null);
+  }
+  if (act === 'saveitem') {
+    var id = el.getAttribute('data-id');
+    var body = {
+      group_id: Number(document.getElementById('nfGroup').value),
+      name: document.getElementById('nfName').value,
+      url: document.getElementById('nfUrl').value,
+      description: document.getElementById('nfDesc').value,
+      subgroup: document.getElementById('nfSub').value,
+      tags: document.getElementById('nfTags').value,
+      icon: document.getElementById('nfIcon').value,
+      color: document.getElementById('nfColor').value,
+      visible_to: document.getElementById('nfVis').value,
+      probe: document.getElementById('nfProbe').checked ? 1 : 0,
+      favorite: document.getElementById('nfFav').checked ? 1 : 0,
+      launch: document.getElementById('nfLaunch').value,
+      launch_host: document.getElementById('nfLaunchHost').value,
+      launch_arg: document.getElementById('nfLaunchArg').value
+    };
+    if (!body.name.trim()) return toast('名称不能为空', 'err');
+    var req = id
+      ? api('/api/nav/items/' + id, { method: 'PUT', body: body })
+      : api('/api/nav/items', { method: 'POST', body: body });
+    return req.then(function () {
+      toast('已保存', 'ok');
+      navRefreshAnd({ flow: 'list' });
+    }).catch(function (err) { toast(err.message, 'err'); });
+  }
+
+  var gmove = el.getAttribute('data-gmove');
+  if (gmove) {
+    return api('/api/nav/groups/' + el.getAttribute('data-id'),
+               { method: 'PUT', body: { move: gmove } })
+      .then(afterNavChange).catch(function (err) { toast(err.message, 'err'); });
+  }
+  var gedit = el.getAttribute('data-gedit');
+  if (gedit) {
+    var cur = el.getAttribute('data-name');
+    var nn = prompt('修改分组名称：', cur);
+    if (nn === null || !nn.trim()) return;
+    return api('/api/nav/groups/' + gedit, { method: 'PUT', body: { name: nn.trim() } })
+      .then(afterNavChange).catch(function (err) { toast(err.message, 'err'); });
+  }
+  var gdel = el.getAttribute('data-gdel');
+  if (gdel) {
+    var cnt = Number(el.getAttribute('data-cnt') || 0);
+    if (!confirm('删除分组「' + el.getAttribute('data-name') + '」？\n\n' +
+        (cnt ? '该分组下的 ' + cnt + ' 个导航项会一起被删除。' : '该分组下没有导航项。'))) return;
+    return api('/api/nav/groups/' + gdel, { method: 'DELETE' })
+      .then(afterNavChange).catch(function (err) { toast(err.message, 'err'); });
+  }
+
+  var imove = el.getAttribute('data-imove');
+  if (imove) {
+    return api('/api/nav/items/' + el.getAttribute('data-id'),
+               { method: 'PUT', body: { move: imove } })
+      .then(afterNavChange).catch(function (err) { toast(err.message, 'err'); });
+  }
+  var iedit = el.getAttribute('data-iedit');
+  if (iedit) return showNavItemForm(findNavItem(Number(iedit)));
+  var idel = el.getAttribute('data-idel');
+  if (idel) {
+    if (!confirm('删除导航项「' + el.getAttribute('data-name') + '」？')) return;
+    return api('/api/nav/items/' + idel, { method: 'DELETE' })
+      .then(afterNavChange).catch(function (err) { toast(err.message, 'err'); });
+  }
+}
+
+function afterNavChange(res) {
+  S.nav = res;
+  renderPortal();
+  renderNavManageList();
+}
+
+function navRefreshAnd(opt) {
+  api('/api/nav').then(function (res) {
+    S.nav = res;
+    renderPortal();
+    if (opt && opt.flow === 'list') renderNavManageList();
+  }).catch(function (err) { toast(err.message, 'err'); });
+}
+
+document.getElementById('navTheme').addEventListener('click', function () {
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+});
+
+/* ======================= 启动（导航中心） ======================= */
+function boot() {
+  initTheme();
+  document.getElementById('brandMark').innerHTML = ic('home', 17);
+  document.getElementById('siSearch').innerHTML = ic('search', 17);
+  document.getElementById('navQClear').innerHTML = ic('close', 15);
+  document.getElementById('icRefresh').innerHTML = ic('refresh', 16);
+  document.getElementById('icNavManage').innerHTML = ic('grid', 16);
+  document.getElementById('icAccount').innerHTML = ic('user', 16);
+
+  api('/api/session').then(function (res) { S.me = res.user; })
+    .catch(function () { S.me = null; })
+    .then(function () { renderMe(); loadNav(); });
+}
+
+/* 导航中心顶栏：非管理员藏掉管理员入口 */
+NH.hooks.paintChrome = function () {
+  ['navAccount', 'navManage', 'navRefresh'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.hidden = !isAdmin();
+  });
+  renderNavUser();
+};
+boot();
+
+})();
+</script>
+</body>
+</html>

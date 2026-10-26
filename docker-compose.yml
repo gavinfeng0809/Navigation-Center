@@ -1,0 +1,25 @@
+services:
+  notice-hub:
+    build: .
+    image: notice-hub:1.0.0
+    container_name: notice-hub
+    restart: unless-stopped
+    ports:
+      # 只绑内网网卡 → 公网接口完全不可达（已确认只需内网访问）。
+      # 换服务器时把 IP 改成新机器的内网地址；写 "8091:8091" 则监听所有网卡。
+      - "10.127.207.71:8091:8091"
+    env_file:
+      - .env
+    environment:
+      PORT: "8091"
+      NOTICE_DATA_DIR: /app/data
+    volumes:
+      # 数据库落在宿主机 /data/notice-hub/data，重建容器不丢数据
+      - ./data:/app/data
+      # 静态目录也挂出来：新生成的原文页即时生效，不用重建镜像
+      - ./public:/app/public
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,18 @@
+本手册有两个产物，内容同源：
+
+  使用手册.md     —— Markdown 源文件（改这个）
+  使用手册.html   —— 独立 HTML（双击即可阅读，样式已内嵌，可发给同事）
+
+改完 .md 后重新生成 .html：
+
+  cd /data/notice-hub
+  pandoc docs/使用手册.md -o docs/使用手册.html --standalone --embed-resources \
+    --toc --toc-depth=2 --css=docs/manual.css \
+    --metadata pagetitle="导航中心 · 重要通知中心 使用手册" --metadata lang=zh-CN
+
+说明：
+  · --toc 让 pandoc 自己生成目录，链接必然和标题 id 一致（手写锚点会因为
+    pandoc 会剥掉章节编号而全部失效）。
+  · 用 --metadata pagetitle 而不是 title：后者会额外渲染一个标题块，
+    和正文的 H1 重复，标题会显示两遍。
+  · 样式在 docs/manual.css（已在仓库里），改样式不用动 .md。
